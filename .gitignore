@@ -1,0 +1,44 @@
+# === Build ===
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# === IDE ===
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.swp
+*~
+
+# === Java ===
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+replay_pid*
+
+# === Logs ===
+logs/
+*.log
+
+# === OS ===
+.DS_Store
+Thumbs.db
+Desktop.ini
+nul
+
+# === Environment ===
+*.env
+*.env.*
+# 保留配置模板（不含真实密码）
+!docker/.env.production
+!**/.env.example
+
+# === Claude Code ===
+# 保留 .claude/commands/ 和 .claude/skills/（已提交）
+# 忽略本地配置
+.claude/settings.local.json
+
+.gemini/settings.json

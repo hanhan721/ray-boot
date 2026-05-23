@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.1</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.ray</groupId>
+    <artifactId>ray-boot</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>Ray Boot</name>
+    <description>Spring Boot 后台管理系统脚手架</description>
+
+    <modules>
+        <module>ray-common</module>
+        <module>ray-framework</module>
+        <module>ray-system</module>
+        <module>ray-business</module>
+        <module>ray-schedule</module>
+        <module>ray-boot-app</module>
+    </modules>
+
+    <properties>
+        <!-- Java 版本 -->
+        <java.version>25</java.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- Ray Boot 版本 -->
+        <ray-boot.version>1.0.0-SNAPSHOT</ray-boot.version>
+
+        <!-- 第三方依赖版本 -->
+        <mybatis-plus.version>3.5.15</mybatis-plus.version>
+        <mybatis-plus-join.version>1.5.5</mybatis-plus-join.version>
+<springdoc.version>3.0.1</springdoc.version>
+        <mapstruct.version>1.6.3</mapstruct.version>
+        <lombok.version>1.18.42</lombok.version>
+        <hutool.version>5.8.43</hutool.version>
+        <guava.version>33.5.0-jre</guava.version>
+        <aws-sdk.version>2.25.27</aws-sdk.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- ==================== Ray Boot 模块 ==================== -->
+            <!-- Common 模块 -->
+            <dependency>
+                <groupId>com.ray</groupId>
+                <artifactId>ray-common-core</artifactId>
+                <version>${ray-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ray</groupId>
+                <artifactId>ray-common-valkey</artifactId>
+                <version>${ray-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ray</groupId>
+                <artifactId>ray-common-mybatis</artifactId>
+                <version>${ray-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ray</groupId>
+                <artifactId>ray-common-security</artifactId>
+                <version>${ray-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ray</groupId>
+                <artifactId>ray-common-storage</artifactId>
+                <version>${ray-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ray</groupId>
+                <artifactId>ray-common-notify</artifactId>
+                <version>${ray-boot.version}</version>
+            </dependency>
+
+            <!-- Framework 模块 -->
+            <dependency>
+                <groupId>com.ray</groupId>
+                <artifactId>ray-framework-web</artifactId>
+                <version>${ray-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ray</groupId>
+                <artifactId>ray-framework-log</artifactId>
+                <version>${ray-boot.version}</version>
+            </dependency>
+
+            <!-- System 模块 -->
+            <dependency>
+                <groupId>com.ray</groupId>
+                <artifactId>ray-system-api</artifactId>
+                <version>${ray-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ray</groupId>
+                <artifactId>ray-system-biz</artifactId>
+                <version>${ray-boot.version}</version>
+            </dependency>
+
+            <!-- Schedule 模块 -->
+            <dependency>
+                <groupId>com.ray</groupId>
+                <artifactId>ray-schedule</artifactId>
+                <version>${ray-boot.version}</version>
+            </dependency>
+
+            <!-- AWS SDK BOM (用于 RustFS S3 兼容存储) -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws-sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- ==================== 第三方依赖 ==================== -->
+            <!-- MyBatis-Plus (Spring Boot 4 专用) -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-annotation</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-jsqlparser</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+
+            <!-- MyBatis-Plus-Join (联表查询增强) -->
+            <dependency>
+                <groupId>com.github.yulichang</groupId>
+                <artifactId>mybatis-plus-join-boot-starter</artifactId>
+                <version>${mybatis-plus-join.version}</version>
+            </dependency>
+
+            <!-- SpringDoc OpenAPI + Scalar UI (API 文档) -->
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-common</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-scalar</artifactId>
+                <version>${springdoc.version}</version>
+            </dependency>
+
+            <!-- MapStruct -->
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct-processor</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+
+            <!-- Hutool 工具包 -->
+            <dependency>
+                <groupId>cn.hutool</groupId>
+                <artifactId>hutool-all</artifactId>
+                <version>${hutool.version}</version>
+            </dependency>
+
+            <!-- Guava -->
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>${guava.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <!-- MapStruct + Lombok 编译配置 -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                            <path>
+                                <groupId>org.mapstruct</groupId>
+                                <artifactId>mapstruct-processor</artifactId>
+                                <version>${mapstruct.version}</version>
+                            </path>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok-mapstruct-binding</artifactId>
+                                <version>0.2.0</version>
+                            </path>
+                        </annotationProcessorPaths>
+                        <compilerArgs>
+                            <arg>-Amapstruct.defaultComponentModel=spring</arg>
+                        </compilerArgs>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+    <!-- Maven 仓库配置：优先阿里云 -> 腾讯云 -> 官方中央仓库 -->
+    <repositories>
+        <repository>
+            <id>aliyun</id>
+            <name>Aliyun Maven Repository</name>
+            <url>https://maven.aliyun.com/repository/public</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>tencent</id>
+            <name>Tencent Cloud Maven Repository</name>
+            <url>https://mirrors.cloud.tencent.com/nexus/repository/maven-public/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>central</id>
+            <name>Maven Central</name>
+            <url>https://repo.maven.apache.org/maven2</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <id>aliyun-plugin</id>
+            <name>Aliyun Maven Plugin Repository</name>
+            <url>https://maven.aliyun.com/repository/public</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </pluginRepository>
+        <pluginRepository>
+            <id>tencent-plugin</id>
+            <name>Tencent Cloud Maven Plugin Repository</name>
+            <url>https://mirrors.cloud.tencent.com/nexus/repository/maven-public/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </pluginRepository>
+        <pluginRepository>
+            <id>central-plugin</id>
+            <name>Maven Central Plugin Repository</name>
+            <url>https://repo.maven.apache.org/maven2</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
+
+</project>

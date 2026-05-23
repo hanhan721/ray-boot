@@ -1,0 +1,222 @@
+package com.ray.system.service.impl;
+
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.ray.common.mybatis.util.QueryWrapperHelper;
+import com.ray.system.api.domain.UserDetailVO;
+import com.ray.system.api.domain.UserPageQuery;
+import com.ray.common.core.util.AssertUtils;
+import com.ray.common.mybatis.util.PageUtils;
+import com.ray.common.security.config.AuthProperties;
+import com.ray.common.security.service.TokenService;
+import com.ray.system.api.entity.SysUser;
+import com.ray.system.mapper.UserMapper;
+import com.ray.system.service.PermissionService;
+import com.ray.system.service.RefreshTokenService;
+import com.ray.system.service.RoleService;
+import com.ray.system.service.UserDeptService;
+import com.ray.system.service.UserRoleService;
+import com.ray.system.service.UserService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Set;
+
+/**
+ * 用户 Service 实现
+ */
+@Service
+@RequiredArgsConstructor
+public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements UserService {
+
+    private final UserRoleService userRoleService;
+    private final UserDeptService userDeptService;
+    private final RoleService roleService;
+    private final PasswordEncoder passwordEncoder;
+    private final TokenService tokenService;
+    private final PermissionService permissionService;
+    private final RefreshTokenService refreshTokenService;
+    private final AuthProperties authProperties;
+
+    @Override
+    public IPage<SysUser> page(UserPageQuery query) {
+        return super.page(PageUtils.buildPage(query), QueryWrapperHelper.build(query));
+    }
+
+    @Override
+    public UserDetailVO getUserDetail(Long id) {
+        var user = super.getById(id);
+        AssertUtils.notNull(user, "用户不存在");
+        var roleIds = userRoleService.getRoleIdsByUserId(id);
+        var deptIds = userDeptService.getDeptIdsByUserId(id);
+        return new UserDetailVO(user, roleIds, deptIds);
+    }
+
+    @Override
+    public SysUser getById(Long id) {
+        return super.getById(id);
+    }
+
+    @Override
+    public SysUser getByUsername(String username) {
+        return super.getOne(
+                Wrappers.<SysUser>lambdaQuery()
+                        .eq(SysUser::getUsername, username)
+        );
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void add(SysUser user) {
+        this.checkUsernameUnique(user.getUsername(), null);
+
+        // 加密密码
+        if (user.getPassword() != null && !user.getPassword().isBlank()) {
+            user.setPassword(passwordEncoder.encode(user.getPassword()));
+        }
+
+        super.save(user);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void update(SysUser user) {
+        AssertUtils.notNull(user.getId(), "用户 ID 不能为空");
+        this.checkUsernameUnique(user.getUsername(), user.getId());
+
+        // 不允许通过此接口修改密码
+        user.setPassword(null);
+
+        // 检测是否禁用账号
+        var needKick = Boolean.FALSE.equals(user.getEnabled());
+
+        super.updateById(user);
+
+        // 禁用账号后踢掉该用户所有设备
+        if (needKick) {
+            this.kickUser(user.getId());
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void delete(Set<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return;
+        }
+
+        // 删除用户角色关联
+        userRoleService.deleteByUserIds(ids);
+
+        super.removeByIds(ids);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void resetPassword(Long id, String password) {
+        AssertUtils.notNull(id, "用户 ID 不能为空");
+        AssertUtils.notEmpty(password, "密码不能为空");
+
+        var user = new SysUser();
+        user.setId(id);
+        user.setPassword(passwordEncoder.encode(password));
+        super.updateById(user);
+
+        // 密码重置后踢掉该用户所有设备
+        this.kickUser(id);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void assignRoles(Long userId, Set<Long> roleIds) {
+        AssertUtils.notNull(userId, "用户 ID 不能为空");
+        AssertUtils.notNull(super.getById(userId), "用户不存在");
+
+        userRoleService.saveUserRoles(userId, roleIds);
+
+        // 刷新用户权限缓存
+        this.refreshPermissionCache(userId);
+    }
+
+    @Override
+    public Set<Long> getRoleIds(Long userId) {
+        return userRoleService.getRoleIdsByUserId(userId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void assignDepts(Long userId, Set<Long> deptIds) {
+        AssertUtils.notNull(userId, "用户 ID 不能为空");
+        AssertUtils.notNull(super.getById(userId), "用户不存在");
+        userDeptService.saveUserDepts(userId, deptIds);
+    }
+
+    @Override
+    public Set<Long> getDeptIds(Long userId) {
+        return userDeptService.getDeptIdsByUserId(userId);
+    }
+
+    @Override
+    public void setEnabled(Long id, boolean enabled) {
+        this.checkNotSuperAdminUser(id);
+        var user = new SysUser();
+        user.setId(id);
+        user.setEnabled(enabled);
+        super.updateById(user);
+
+        // 禁用账号后踢掉该用户所有设备
+        if (!enabled) {
+            this.kickUser(id);
+        }
+    }
+
+    /**
+     * 校验用户不是超管账户
+     */
+    private void checkNotSuperAdminUser(Long id) {
+        var superAdminCodes = authProperties.getSuperAdmin().getRoleCodes();
+        if (superAdminCodes.isEmpty()) {
+            return;
+        }
+        var roleIds = userRoleService.getRoleIdsByUserId(id);
+        if (roleIds.isEmpty()) {
+            return;
+        }
+        var hasSuperRole = roleService.listByIds(roleIds).stream()
+                .anyMatch(role -> superAdminCodes.contains(role.getRoleKey()));
+        AssertUtils.isFalse(hasSuperRole, "超管账户不允许修改状态");
+    }
+
+    /**
+     * 校验用户名唯一性
+     */
+    private void checkUsernameUnique(String username, Long excludeId) {
+        if (username == null || username.isBlank()) {
+            return;
+        }
+        var wrapper = Wrappers.<SysUser>lambdaQuery()
+                .eq(SysUser::getUsername, username)
+                .ne(excludeId != null, SysUser::getId, excludeId);
+        AssertUtils.isTrue(!super.exists(wrapper), "用户名已存在");
+    }
+
+    /**
+     * 刷新用户权限缓存
+     */
+    private void refreshPermissionCache(Long userId) {
+        var permissions = permissionService.getCodesByUserId(userId);
+        tokenService.cachePermissions(userId, permissions);
+    }
+
+    /**
+     * 踢掉用户所有设备（删除所有 Token + 清除权限缓存）
+     */
+    private void kickUser(Long userId) {
+        tokenService.removeAllTokens(userId);
+        refreshTokenService.deleteByUserId(userId);
+        tokenService.removePermissions(userId);
+    }
+}

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.ray</groupId>
+        <artifactId>ray-system</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>ray-system-biz</artifactId>
+
+    <name>Ray System Biz</name>
+    <description>系统模块业务实现 - Controller、Service、Mapper</description>
+
+    <dependencies>
+        <!-- System API -->
+        <dependency>
+            <groupId>com.ray</groupId>
+            <artifactId>ray-system-api</artifactId>
+        </dependency>
+
+        <!-- Common Storage -->
+        <dependency>
+            <groupId>com.ray</groupId>
+            <artifactId>ray-common-storage</artifactId>
+        </dependency>
+
+        <!-- Common Notify -->
+        <dependency>
+            <groupId>com.ray</groupId>
+            <artifactId>ray-common-notify</artifactId>
+        </dependency>
+
+        <!-- Framework 模块 -->
+        <dependency>
+            <groupId>com.ray</groupId>
+            <artifactId>ray-framework-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.ray</groupId>
+            <artifactId>ray-framework-log</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- MapStruct -->
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

@@ -1,0 +1,103 @@
+server:
+  port: 9527
+
+spring:
+  application:
+    name: ray-boot
+  profiles:
+    active: dev
+  threads:
+    virtual:
+      enabled: true
+
+  # 数据源配置
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://${PG_HOST}:${PG_PORT:5432}/${PG_DATABASE}?stringtype=unspecified
+    username: ${PG_USERNAME}
+    password: ${PG_PASSWORD}
+
+  # Redis 配置
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      database: 1
+      timeout: 5s
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 4
+          min-idle: 1
+          time-between-eviction-runs: 30s
+        shutdown-timeout: 5s
+
+  # 文件上传配置
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 100MB
+    encoding:
+      charset: UTF-8
+
+  # Jackson 配置 (Jackson 3 默认使用 ISO-8601 日期格式)
+  jackson:
+    time-zone: Asia/Shanghai
+
+# 项目配置
+ray:
+  snowflake:
+    machine-id: 0  # 机器 ID（0~7），多实例部署时需不同
+  auth:
+    token:
+      access-expire: 30       # Access Token 过期时间（分钟）
+      refresh-expire: 7       # Refresh Token 过期时间（天）
+      refresh-salt: "${RAY_AUTH_REFRESH_SALT}"
+    security:
+      max-login-attempts: 5   # 登录失败锁定次数
+      lock-duration: 30       # 登录失败锁定时间（分钟）
+    super-admin:
+      role-codes:             # 超管角色代码集合，拥有最高权限
+        - admin                # 可配置多个超管角色
+  storage:
+    storage-type: RUST_FS      # 存储类型：LOCAL / RUST_FS
+    local:
+      base-path: ./uploads     # 本地存储根目录
+    access:
+      public-base-url: ${RAY_STORAGE_PUBLIC_BASE_URL}
+      sign-secret: "${RAY_STORAGE_SIGN_SECRET}"
+    rust-fs:
+      endpoint: ${RUSTFS_ENDPOINT}
+      public-endpoint: ${RUSTFS_PUBLIC_ENDPOINT:}
+      access-key: ${RUSTFS_ACCESS_KEY}
+      secret-key: ${RUSTFS_SECRET_KEY}
+      bucket: ${RUSTFS_BUCKET}
+
+# 加密配置
+crypto:
+  aes-key: "${PARAM_ENCRYPT_KEY}"  # AES-256 密钥 (32 字节的 Base64 编码)，通过环境变量注入
+
+# MyBatis-Plus 配置
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.ray.**.entity
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: assign_id  # 雪花算法
+      logic-delete-field: deleted
+      logic-delete-value: "true"
+      logic-not-delete-value: "false"
+
+# SpringDoc OpenAPI 配置
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+# 日志配置 (详细配置见 logback-spring.xml)
+logging:
+  config: classpath:logback-spring.xml

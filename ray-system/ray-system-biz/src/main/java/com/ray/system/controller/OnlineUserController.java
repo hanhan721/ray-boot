@@ -1,0 +1,50 @@
+package com.ray.system.controller;
+
+import com.ray.common.core.domain.R;
+import com.ray.system.api.domain.OnlineUserVO;
+import com.ray.system.service.OnlineUserService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+/**
+ * 在线用户管理
+ */
+@Tag(name = "在线用户管理")
+@RestController
+@RequestMapping("/api/sys/online")
+@RequiredArgsConstructor
+public class OnlineUserController {
+
+    private final OnlineUserService onlineUserService;
+
+    @Operation(summary = "查询在线用户列表")
+    @GetMapping("/list")
+    @PreAuthorize("@perm.has('system:online:list')")
+    public R<List<OnlineUserVO>> list(
+            @Parameter(description = "用户名") @RequestParam(required = false) String username,
+            @Parameter(description = "登录 IP") @RequestParam(required = false) String loginIp) {
+        return R.ok(onlineUserService.list(username, loginIp));
+    }
+
+    @Operation(summary = "强制下线（单个会话）")
+    @DeleteMapping("/{tokenId}")
+    @PreAuthorize("@perm.has('system:online:kick')")
+    public R<Void> kickByToken(@PathVariable String tokenId) {
+        onlineUserService.kickByToken(tokenId);
+        return R.ok();
+    }
+
+    @Operation(summary = "强制下线（用户所有会话）")
+    @DeleteMapping("/user/{userId}")
+    @PreAuthorize("@perm.has('system:online:kick')")
+    public R<Void> kickByUserId(@PathVariable Long userId) {
+        onlineUserService.kickByUserId(userId);
+        return R.ok();
+    }
+}

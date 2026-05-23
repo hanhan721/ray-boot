@@ -1,0 +1,2 @@
+com.ray.common.mybatis.config.MybatisPlusConfig
+com.ray.common.mybatis.handler.AutoFillMetaObjectHandler

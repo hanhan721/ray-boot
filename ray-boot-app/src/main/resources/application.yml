@@ -50,6 +50,9 @@ ray:
   http:
     # 可信代理 IP（精确地址，逗号分隔）；入口代理须追加实际连接地址或覆盖 X-Forwarded-For。
     trusted-proxies: ${RAY_HTTP_TRUSTED_PROXIES:127.0.0.1,::1}
+  cors:
+    # 跨域白名单（精确域名，逗号分隔）。生产通过环境变量 RAY_CORS_ALLOWED_ORIGINS 覆盖，例如 https://admin.example.com
+    allowed-origins: ${RAY_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173}
   snowflake:
     machine-id: 0  # 机器 ID（0~7），多实例部署时需不同
   auth:

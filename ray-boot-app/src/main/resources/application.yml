@@ -47,6 +47,9 @@ spring:
 
 # 项目配置
 ray:
+  http:
+    # 可信代理 IP（精确地址，逗号分隔）；入口代理须追加实际连接地址或覆盖 X-Forwarded-For。
+    trusted-proxies: ${RAY_HTTP_TRUSTED_PROXIES:127.0.0.1,::1}
   snowflake:
     machine-id: 0  # 机器 ID（0~7），多实例部署时需不同
   auth:

@@ -37,6 +37,7 @@ public class SysUser extends BaseEntity<SysUser> {
      * 密码
      */
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @Size(max = 72, message = "密码长度不能超过72个字符")
     private String password;
 
     /**

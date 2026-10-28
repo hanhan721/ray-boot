@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -75,7 +76,9 @@ public class UserController {
         userService.resetPassword(id, request.password());
         return R.ok();
     }
-    record ResetPasswordRequest(@NotBlank(message = "密码不能为空") String password) {}
+    record ResetPasswordRequest(@NotBlank(message = "密码不能为空")
+                                @Size(max = 72, message = "密码长度不能超过72个字符")
+                                String password) {}
 
     @Operation(summary = "分配角色")
     @PutMapping("/{id}/roles")

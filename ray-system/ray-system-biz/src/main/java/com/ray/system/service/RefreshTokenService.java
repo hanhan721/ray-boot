@@ -42,6 +42,13 @@ public interface RefreshTokenService extends IService<RefreshToken> {
     void deleteByUserId(Long userId);
 
     /**
+     * 删除指定 Access Token 关联的 Refresh Token（登出时清理会话残留）
+     *
+     * @param accessToken Access Token UUID
+     */
+    void deleteByAccessToken(String accessToken);
+
+    /**
      * 清理过期的 Refresh Token 记录
      *
      * @return 清理数量

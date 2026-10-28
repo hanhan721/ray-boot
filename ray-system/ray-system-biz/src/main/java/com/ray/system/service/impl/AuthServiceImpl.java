@@ -2,6 +2,7 @@ package com.ray.system.service.impl;
 
 import com.ray.common.core.constant.ResultCode;
 import com.ray.common.core.exception.BusinessException;
+import com.ray.common.core.util.IpUtils;
 import com.ray.common.core.util.UserAgentUtils;
 import com.ray.common.security.config.AuthProperties;
 import com.ray.common.security.constant.AuthCacheConstants;
@@ -24,19 +25,23 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * 认证 Service 实现
@@ -47,6 +52,7 @@ import java.util.stream.Collectors;
 public class AuthServiceImpl implements AuthService {
 
     private static final String REFRESH_TOKEN_COOKIE = "refresh_token";
+    private static final String DUMMY_PASSWORD_HASH = "$2a$10$OL.cIpk1mSCW/8.JxafI9emBwBLGsjBS5m5q83Nzz14k8VioLmO2q";
 
     private final UserService userService;
     private final UserRoleService userRoleService;
@@ -72,16 +78,22 @@ public class AuthServiceImpl implements AuthService {
         var clientIp = this.getClientIp(httpRequest);
         var userAgent = httpRequest.getHeader("User-Agent");
         var user = userService.getByUsername(username);
-        if (user == null || !passwordEncoder.matches(request.password(), user.getPassword())) {
+        // 两个分支执行相同的匹配流程，超长密码也不能通过 encode/matches 的差异枚举用户。
+        var passwordHash = user != null ? user.getPassword() : DUMMY_PASSWORD_HASH;
+        var passwordMatches = passwordEncoder.matches(request.password(), passwordHash);
+        if (user == null || !passwordMatches) {
             this.recordLoginFail(username);
             this.publishLoginLog(username, clientIp, userAgent, false, "用户名或密码错误");
             throw new BusinessException(ResultCode.UNAUTHORIZED, "用户名或密码错误");
         }
 
-        // 3. 检查用户状态
-        if (!Boolean.TRUE.equals(user.getEnabled())) {
-            this.publishLoginLog(username, clientIp, userAgent, false, "账号已被禁用");
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "账号已被禁用");
+        // 3. 与角色更新共用用户行锁，并重新检查 BCrypt 运算期间可能发生的禁用或密码重置。
+        user = userService.getByIdForUpdate(user.getId());
+        if (user == null || !Boolean.TRUE.equals(user.getEnabled())
+                || !Objects.equals(passwordHash, user.getPassword())) {
+            this.recordLoginFail(username);
+            this.publishLoginLog(username, clientIp, userAgent, false, "账号不存在、已被禁用或凭据已变更");
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "用户名或密码错误");
         }
 
         // 4. 加载角色
@@ -105,7 +117,7 @@ public class AuthServiceImpl implements AuthService {
         refreshTokenService.create(rawRefreshToken, user.getId(), accessToken, userAgent, clientIp);
 
         // 9. 设置新的 Refresh Token Cookie
-        this.setRefreshTokenCookie(httpResponse, rawRefreshToken);
+        this.setRefreshTokenCookie(httpRequest, httpResponse, rawRefreshToken);
 
         // 10. 清除登录失败计数
         this.clearLoginFail(username);
@@ -136,15 +148,20 @@ public class AuthServiceImpl implements AuthService {
         // 2. 验证 Refresh Token
         var refreshToken = refreshTokenService.verify(rawRefreshToken);
         if (refreshToken == null) {
-            this.clearRefreshTokenCookie(httpResponse);
+            this.clearRefreshTokenCookie(httpRequest, httpResponse);
             throw new BusinessException(ResultCode.UNAUTHORIZED, "Refresh Token 无效或已过期");
         }
 
-        // 3. 检查用户状态
-        var user = userService.getById(refreshToken.getUserId());
+        // 3. 等待同一用户的角色更新/会话操作完成，再重新验证 Refresh Token，避免复用旧查询结果。
+        var user = userService.getByIdForUpdate(refreshToken.getUserId());
+        refreshToken = refreshTokenService.verify(rawRefreshToken);
+        if (refreshToken == null) {
+            this.clearRefreshTokenCookie(httpRequest, httpResponse);
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "Refresh Token 无效或已过期");
+        }
         if (user == null || !Boolean.TRUE.equals(user.getEnabled())) {
             refreshTokenService.deleteByUserId(refreshToken.getUserId());
-            this.clearRefreshTokenCookie(httpResponse);
+            this.clearRefreshTokenCookie(httpRequest, httpResponse);
             throw new BusinessException(ResultCode.UNAUTHORIZED, "账号不存在或已被禁用");
         }
 
@@ -170,7 +187,7 @@ public class AuthServiceImpl implements AuthService {
         refreshTokenService.create(newRawRefreshToken, user.getId(), newAccessToken, userAgent, clientIp);
 
         // 9. 设置新 Refresh Token Cookie
-        this.setRefreshTokenCookie(httpResponse, newRawRefreshToken);
+        this.setRefreshTokenCookie(httpRequest, httpResponse, newRawRefreshToken);
 
         log.info("Token 续期成功: userId={}", user.getId());
 
@@ -179,13 +196,27 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void logout(HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         var loginUser = SecurityUtils.getLoginUser();
         var accessToken = SecurityUtils.getAccessToken();
+        var rawRefreshToken = this.extractRefreshToken(httpRequest);
+        var refreshToken = rawRefreshToken != null && !rawRefreshToken.isBlank()
+                ? refreshTokenService.verify(rawRefreshToken) : null;
+
+        // 与续期共用用户行锁；两个凭据属于不同用户时按固定顺序加锁，避免交叉登出死锁。
+        Stream.of(loginUser != null ? loginUser.userId() : null,
+                        refreshToken != null ? refreshToken.getUserId() : null)
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted()
+                .forEach(userService::getByIdForUpdate);
 
         if (loginUser != null && accessToken != null) {
-            // 删除 Access Token
+            // 删除当前 Access Token
             tokenService.removeAccessToken(accessToken, loginUser.userId());
+            // 删除与当前 Access Token 绑定的 Refresh Token，防止登出后仍可续期
+            refreshTokenService.deleteByAccessToken(accessToken);
 
             // 记录登出日志
             var clientIp = this.getClientIp(httpRequest);
@@ -195,8 +226,17 @@ public class AuthServiceImpl implements AuthService {
             log.info("用户退出登录: username={}", loginUser.username());
         }
 
-        // 清除 Cookie
-        this.clearRefreshTokenCookie(httpResponse);
+        // 兜底：如果请求中还带有 Refresh Token Cookie（例如 Access 已过期但 Refresh 仍有效），一并作废
+        if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
+            var verified = refreshTokenService.verify(rawRefreshToken);
+            if (verified != null) {
+                tokenService.removeAccessToken(verified.getAccessToken(), verified.getUserId());
+                refreshTokenService.deleteByTokenHash(verified.getTokenHash());
+            }
+        }
+
+        // 清除 Cookie，Path 与签发时一致。
+        this.clearRefreshTokenCookie(httpRequest, httpResponse);
     }
 
     @Override
@@ -207,7 +247,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         var user = userService.getById(loginUser.userId());
-        if (user == null) {
+        if (user == null || !Boolean.TRUE.equals(user.getEnabled())) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "用户不存在");
         }
 
@@ -306,42 +346,40 @@ public class AuthServiceImpl implements AuthService {
 
     /**
      * 设置 Refresh Token 到 HttpOnly Cookie
+     * <p>
+     * Secure 跟随当前请求是否为 HTTPS（本地 HTTP 调试可用，生产 HTTPS 自动加 Secure）；
+     * SameSite 固定 Lax，阻断第三方站点携带 Cookie 发起 CSRF，同時不影响顶级导航。
      */
-    private void setRefreshTokenCookie(HttpServletResponse response, String rawToken) {
-        var cookie = new Cookie(REFRESH_TOKEN_COOKIE, rawToken);
-        cookie.setHttpOnly(true);
-        cookie.setPath("/api/auth");
-        cookie.setMaxAge(authProperties.getToken().getRefreshExpire() * 24 * 60 * 60);
-        response.addCookie(cookie);
+    private void setRefreshTokenCookie(HttpServletRequest request, HttpServletResponse response, String rawToken) {
+        var cookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE, rawToken)
+                .httpOnly(true)
+                .secure(request.isSecure())
+                .sameSite("Lax")
+                .path("/api/auth")
+                .maxAge(Duration.ofDays(authProperties.getToken().getRefreshExpire()))
+                .build();
+        response.addHeader("Set-Cookie", cookie.toString());
     }
 
     /**
-     * 清除 Refresh Token Cookie
+     * 清除 Refresh Token Cookie（Path 与签发时一致，沿用其他安全属性）
      */
-    private void clearRefreshTokenCookie(HttpServletResponse response) {
-        var cookie = new Cookie(REFRESH_TOKEN_COOKIE, "");
-        cookie.setHttpOnly(true);
-        cookie.setPath("/api/auth");
-        cookie.setMaxAge(0);
-        response.addCookie(cookie);
+    private void clearRefreshTokenCookie(HttpServletRequest request, HttpServletResponse response) {
+        var cookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE, "")
+                .httpOnly(true)
+                .secure(request.isSecure())
+                .sameSite("Lax")
+                .path("/api/auth")
+                .maxAge(0)
+                .build();
+        response.addHeader("Set-Cookie", cookie.toString());
     }
 
     /**
-     * 获取客户端 IP
+     * 获取客户端 IP（统一走 IpUtils，仅信任可信代理的透传头，防止客户端伪造 XFF 绕过限流/日志）
      */
     private String getClientIp(HttpServletRequest request) {
-        var ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getHeader("X-Real-IP");
-        }
-        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        // X-Forwarded-For 可能有多个 IP，取第一个
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        return ip;
+        return IpUtils.getClientIp(request);
     }
 
     /**

@@ -38,6 +38,11 @@ public interface UserService extends IService<SysUser> {
     SysUser getById(Long id);
 
     /**
+     * 锁定用户行直到当前事务结束，协调角色更新、登录和续期；必须在事务内调用。
+     */
+    SysUser getByIdForUpdate(Long id);
+
+    /**
      * 根据用户名查询用户
      *
      * @param username 用户名

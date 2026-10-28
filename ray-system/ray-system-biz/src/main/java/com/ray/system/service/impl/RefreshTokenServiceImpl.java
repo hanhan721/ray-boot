@@ -81,6 +81,17 @@ public class RefreshTokenServiceImpl extends ServiceImpl<RefreshTokenMapper, Ref
     }
 
     @Override
+    public void deleteByAccessToken(String accessToken) {
+        if (accessToken == null || accessToken.isBlank()) {
+            return;
+        }
+        super.remove(
+                Wrappers.<RefreshToken>lambdaQuery()
+                        .eq(RefreshToken::getAccessToken, accessToken)
+        );
+    }
+
+    @Override
     public int cleanExpired() {
         var wrapper = Wrappers.<RefreshToken>lambdaQuery()
                 .lt(RefreshToken::getExpireTime, LocalDateTime.now());

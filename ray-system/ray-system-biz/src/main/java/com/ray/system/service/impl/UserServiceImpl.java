@@ -21,6 +21,7 @@ import com.ray.system.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Set;
@@ -58,6 +59,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     public SysUser getById(Long id) {
         return super.getById(id);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public SysUser getByIdForUpdate(Long id) {
+        return baseMapper.selectByIdForUpdate(id);
     }
 
     @Override
@@ -112,6 +119,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         userRoleService.deleteByUserIds(ids);
 
         super.removeByIds(ids);
+
+        // 删除后立即踢掉残留会话，否则已签发的 Access Token 在过期前仍可调用业务接口
+        for (Long id : ids) {
+            if (id != null) {
+                this.kickUser(id);
+            }
+        }
     }
 
     @Override
@@ -133,11 +147,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Transactional(rollbackFor = Exception.class)
     public void assignRoles(Long userId, Set<Long> roleIds) {
         AssertUtils.notNull(userId, "用户 ID 不能为空");
-        AssertUtils.notNull(super.getById(userId), "用户不存在");
+        AssertUtils.notNull(this.getByIdForUpdate(userId), "用户不存在");
 
         userRoleService.saveUserRoles(userId, roleIds);
 
-        // 刷新用户权限缓存
+        // 持有用户行锁期间作废旧角色快照；并发登录/续期须等到提交后才能读取角色和签发 Token。
+        tokenService.removeAllTokens(userId);
+        tokenService.removeMenus(userId);
+        tokenService.removePermissions(userId);
         this.refreshPermissionCache(userId);
     }
 
@@ -212,11 +229,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     }
 
     /**
-     * 踢掉用户所有设备（删除所有 Token + 清除权限缓存）
+     * 踢掉用户所有设备（删除所有 Token + 清除菜单/权限缓存）
      */
     private void kickUser(Long userId) {
         tokenService.removeAllTokens(userId);
         refreshTokenService.deleteByUserId(userId);
+        tokenService.removeMenus(userId);
         tokenService.removePermissions(userId);
     }
 }

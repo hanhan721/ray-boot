@@ -1,6 +1,7 @@
 package com.ray.system.controller;
 
 import com.ray.common.core.domain.R;
+import com.ray.framework.web.annotation.RateLimit;
 import com.ray.system.api.domain.LoginRequest;
 import com.ray.system.api.domain.LoginVO;
 import com.ray.system.api.domain.RefreshVO;
@@ -30,6 +31,7 @@ public class AuthController {
     private final AuthService authService;
 
     @Operation(summary = "用户登录")
+    @RateLimit(max = 10, window = 60)
     @PostMapping("/login")
     public R<LoginVO> login(@Valid @RequestBody LoginRequest request,
                             HttpServletRequest httpRequest,
@@ -45,6 +47,7 @@ public class AuthController {
     }
 
     @Operation(summary = "刷新 Token")
+    @RateLimit(max = 20, window = 60)
     @PostMapping("/refresh")
     public R<RefreshVO> refresh(HttpServletRequest httpRequest,
                                 HttpServletResponse httpResponse) {

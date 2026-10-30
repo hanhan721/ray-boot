@@ -6,6 +6,8 @@ import com.ray.common.security.handler.AuthenticationEntryPointImpl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
@@ -29,6 +31,9 @@ public class SecurityConfig {
     private final AuthenticationEntryPointImpl authenticationEntryPoint;
     private final AccessDeniedHandlerImpl accessDeniedHandler;
 
+    @Value("${ray.api-docs.enabled:false}")
+    private boolean apiDocsEnabled;
+
     @Bean
     @Order(2)
     public SecurityFilterChain securityFilterChain(HttpSecurity http) {
@@ -48,9 +53,14 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/scalar",
                                 "/scalar/**",
+                                "/v3/api-docs",
                                 "/v3/api-docs/**",
-                                "/favicon.ico"
-                        ).permitAll()
+                                "/v3/api-docs.yaml",
+                                "/v3/api-docs.yaml/**",
+                                "/swagger-ui.html",
+                                "/swagger-ui/**"
+                        ).access((_, _) -> new AuthorizationDecision(apiDocsEnabled))
+                        .requestMatchers("/favicon.ico").permitAll()
                         // 认证接口
                         .requestMatchers(HttpMethod.POST, "/api/auth/logout").permitAll()
                         .requestMatchers(

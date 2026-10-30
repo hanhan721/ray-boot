@@ -47,6 +47,8 @@ spring:
 
 # 项目配置
 ray:
+  api-docs:
+    enabled: ${RAY_API_DOCS_ENABLED:false} # 开发调试时显式开启
   http:
     # 可信代理 IP（精确地址，逗号分隔）；入口代理须追加实际连接地址或覆盖 X-Forwarded-For。
     trusted-proxies: ${RAY_HTTP_TRUSTED_PROXIES:127.0.0.1,::1}
@@ -61,7 +63,7 @@ ray:
       refresh-expire: 7       # Refresh Token 过期时间（天）
       refresh-salt: "${RAY_AUTH_REFRESH_SALT}"
     security:
-      max-login-attempts: 5   # 登录失败锁定次数
+      max-login-attempts: 5   # 同一账号、同一来源 IP 的登录失败锁定次数
       lock-duration: 30       # 登录失败锁定时间（分钟）
     super-admin:
       role-codes:             # 超管角色代码集合，拥有最高权限
@@ -100,9 +102,12 @@ mybatis-plus:
 # SpringDoc OpenAPI 配置
 springdoc:
   api-docs:
-    enabled: true
+    enabled: ${ray.api-docs.enabled}
   swagger-ui:
-    enabled: true
+    enabled: ${ray.api-docs.enabled}
+
+scalar:
+  enabled: ${ray.api-docs.enabled}
 
 # 日志配置 (详细配置见 logback-spring.xml)
 logging:

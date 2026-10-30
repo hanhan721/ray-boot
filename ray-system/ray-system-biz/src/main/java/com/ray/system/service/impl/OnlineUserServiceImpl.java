@@ -6,9 +6,11 @@ import com.ray.common.valkey.util.ValkeyUtils;
 import com.ray.system.api.domain.OnlineUserVO;
 import com.ray.system.service.OnlineUserService;
 import com.ray.system.service.RefreshTokenService;
+import com.ray.system.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
@@ -30,6 +32,7 @@ public class OnlineUserServiceImpl implements OnlineUserService {
     private final ValkeyUtils valkeyUtils;
     private final TokenService tokenService;
     private final RefreshTokenService refreshTokenService;
+    private final UserService userService;
 
     @Override
     public List<OnlineUserVO> list(String username, String loginIp) {
@@ -52,7 +55,11 @@ public class OnlineUserServiceImpl implements OnlineUserService {
                         return null;
                     }
                     var uuid = keyList.get(i).substring(prefixLen);
-                    return this.buildOnlineUserVO(uuid, fields);
+                    var sessionId = (String) fields.get(AuthCacheConstants.FIELD_SESSION_ID);
+                    if (!StringUtils.hasText(sessionId)) {
+                        sessionId = tokenService.registerSession(uuid);
+                    }
+                    return sessionId != null ? this.buildOnlineUserVO(sessionId, fields) : null;
                 })
                 .filter(Objects::nonNull)
                 .filter(vo -> !StringUtils.hasText(username)
@@ -64,14 +71,22 @@ public class OnlineUserServiceImpl implements OnlineUserService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void kickByToken(String tokenId) {
-        var tokenKey = AuthCacheConstants.TOKEN_KEY_PREFIX + tokenId;
+        var accessToken = tokenService.getAccessTokenBySessionId(tokenId);
+        if (accessToken == null) {
+            return;
+        }
+        var tokenKey = AuthCacheConstants.TOKEN_KEY_PREFIX + accessToken;
         var fields = valkeyUtils.hGetAll(tokenKey);
 
         if (!CollectionUtils.isEmpty(fields)) {
             var userId = ((Number) fields.get(AuthCacheConstants.FIELD_USER_ID)).longValue();
-            tokenService.removeAccessToken(tokenId, userId);
-            log.info("强制下线单个会话: tokenId={}, userId={}", tokenId, userId);
+            // 与续期共用用户行锁，使等待中的刷新在提交后重新验证到失效状态。
+            userService.getByIdForUpdate(userId);
+            refreshTokenService.deleteByAccessToken(accessToken);
+            tokenService.removeAccessToken(accessToken, userId);
+            log.info("强制下线单个会话: userId={}", userId);
         }
     }
 
@@ -85,7 +100,7 @@ public class OnlineUserServiceImpl implements OnlineUserService {
         log.info("强制下线用户所有会话: userId={}", userId);
     }
 
-    private OnlineUserVO buildOnlineUserVO(String uuid, Map<Object, Object> fields) {
+    private OnlineUserVO buildOnlineUserVO(String sessionId, Map<Object, Object> fields) {
         try {
             var userId = ((Number) fields.get(AuthCacheConstants.FIELD_USER_ID)).longValue();
             var tokenUsername = (String) fields.get(AuthCacheConstants.FIELD_USERNAME);
@@ -96,9 +111,9 @@ public class OnlineUserServiceImpl implements OnlineUserService {
             var loginTimeStr = (String) fields.get(AuthCacheConstants.FIELD_LOGIN_TIME);
             var loginTime = LocalDateTime.parse(loginTimeStr);
 
-            return new OnlineUserVO(uuid, userId, tokenUsername, nickname, loginIp, browser, os, loginTime);
+            return new OnlineUserVO(sessionId, userId, tokenUsername, nickname, loginIp, browser, os, loginTime);
         } catch (Exception e) {
-            log.warn("解析在线用户信息失败: tokenId={}", uuid, e);
+            log.warn("解析在线用户信息失败");
             return null;
         }
     }

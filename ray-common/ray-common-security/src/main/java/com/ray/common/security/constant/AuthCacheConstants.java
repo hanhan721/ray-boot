@@ -16,6 +16,12 @@ public final class AuthCacheConstants {
     public static final String TOKEN_KEY_PREFIX = "token:";
 
     /**
+     * 管理会话索引 (String)：session:{SHA-256(Access Token)} -> Access Token。
+     * 与关联 Access Token 同时过期；对外仅暴露摘要，不能作为认证凭据。
+     */
+    public static final String SESSION_KEY_PREFIX = "session:";
+
+    /**
      * 用户 Token 索引 (Set)
      * <p>格式: user_tokens:{userId}
      * <p>Members: Access Token UUID 集合
@@ -52,4 +58,5 @@ public final class AuthCacheConstants {
     public static final String FIELD_LOGIN_IP = "loginIp";
     public static final String FIELD_BROWSER = "browser";
     public static final String FIELD_OS = "os";
+    public static final String FIELD_SESSION_ID = "sessionId";
 }

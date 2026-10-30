@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 /**
  * 在线用户信息
  *
- * @param tokenId   Access Token UUID
+ * @param tokenId   管理会话标识，不能用于认证
  * @param userId    用户 ID
  * @param username  用户名
  * @param nickname  昵称
@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
  */
 @Schema(description = "在线用户信息")
 public record OnlineUserVO(
-        @Schema(description = "Token ID")
+        @Schema(description = "管理会话标识（非认证凭据）")
         String tokenId,
 
         @Schema(description = "用户 ID")

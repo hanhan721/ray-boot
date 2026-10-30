@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.ray.common.security.service.TokenService;
 import com.ray.system.api.entity.SysRolePermission;
 import com.ray.system.mapper.RolePermissionMapper;
+import com.ray.system.security.SuperAdminGuard;
 import com.ray.system.service.PermissionService;
 import com.ray.system.service.RolePermissionService;
 import com.ray.system.service.UserRoleService;
@@ -27,13 +28,16 @@ public class RolePermissionServiceImpl extends ServiceImpl<RolePermissionMapper,
     private final UserRoleService userRoleService;
     private final TokenService tokenService;
     private final PermissionService permissionService;
+    private final SuperAdminGuard superAdminGuard;
 
     public RolePermissionServiceImpl(UserRoleService userRoleService,
                                      TokenService tokenService,
-                                     @Lazy PermissionService permissionService) {
+                                     @Lazy PermissionService permissionService,
+                                     SuperAdminGuard superAdminGuard) {
         this.userRoleService = userRoleService;
         this.tokenService = tokenService;
         this.permissionService = permissionService;
+        this.superAdminGuard = superAdminGuard;
     }
 
     @Override
@@ -97,6 +101,7 @@ public class RolePermissionServiceImpl extends ServiceImpl<RolePermissionMapper,
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void saveRolePermissions(Long roleId, Set<Long> permissionIds) {
+        superAdminGuard.checkRoles(Set.of(roleId));
         // 先删除原有关联
         this.deleteByRoleId(roleId);
 

@@ -8,13 +8,12 @@ import com.ray.system.api.domain.UserDetailVO;
 import com.ray.system.api.domain.UserPageQuery;
 import com.ray.common.core.util.AssertUtils;
 import com.ray.common.mybatis.util.PageUtils;
-import com.ray.common.security.config.AuthProperties;
 import com.ray.common.security.service.TokenService;
 import com.ray.system.api.entity.SysUser;
 import com.ray.system.mapper.UserMapper;
 import com.ray.system.service.PermissionService;
 import com.ray.system.service.RefreshTokenService;
-import com.ray.system.service.RoleService;
+import com.ray.system.security.SuperAdminGuard;
 import com.ray.system.service.UserDeptService;
 import com.ray.system.service.UserRoleService;
 import com.ray.system.service.UserService;
@@ -35,12 +34,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
 
     private final UserRoleService userRoleService;
     private final UserDeptService userDeptService;
-    private final RoleService roleService;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final PermissionService permissionService;
     private final RefreshTokenService refreshTokenService;
-    private final AuthProperties authProperties;
+    private final SuperAdminGuard superAdminGuard;
 
     @Override
     public IPage<SysUser> page(UserPageQuery query) {
@@ -92,6 +90,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Transactional(rollbackFor = Exception.class)
     public void update(SysUser user) {
         AssertUtils.notNull(user.getId(), "用户 ID 不能为空");
+        superAdminGuard.checkUsers(Set.of(user.getId()));
         this.checkUsernameUnique(user.getUsername(), user.getId());
 
         // 不允许通过此接口修改密码
@@ -115,6 +114,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             return;
         }
 
+        superAdminGuard.checkUsers(ids);
+
         // 删除用户角色关联
         userRoleService.deleteByUserIds(ids);
 
@@ -133,6 +134,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     public void resetPassword(Long id, String password) {
         AssertUtils.notNull(id, "用户 ID 不能为空");
         AssertUtils.notEmpty(password, "密码不能为空");
+        superAdminGuard.checkUsers(Set.of(id));
 
         var user = new SysUser();
         user.setId(id);
@@ -148,6 +150,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     public void assignRoles(Long userId, Set<Long> roleIds) {
         AssertUtils.notNull(userId, "用户 ID 不能为空");
         AssertUtils.notNull(this.getByIdForUpdate(userId), "用户不存在");
+        superAdminGuard.checkUsers(Set.of(userId));
+        superAdminGuard.checkRoles(roleIds);
 
         userRoleService.saveUserRoles(userId, roleIds);
 
@@ -168,6 +172,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     public void assignDepts(Long userId, Set<Long> deptIds) {
         AssertUtils.notNull(userId, "用户 ID 不能为空");
         AssertUtils.notNull(super.getById(userId), "用户不存在");
+        superAdminGuard.checkUsers(Set.of(userId));
         userDeptService.saveUserDepts(userId, deptIds);
     }
 
@@ -177,8 +182,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void setEnabled(Long id, boolean enabled) {
-        this.checkNotSuperAdminUser(id);
+        AssertUtils.notNull(id, "用户 ID 不能为空");
+        superAdminGuard.checkUsers(Set.of(id));
         var user = new SysUser();
         user.setId(id);
         user.setEnabled(enabled);
@@ -188,23 +195,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         if (!enabled) {
             this.kickUser(id);
         }
-    }
-
-    /**
-     * 校验用户不是超管账户
-     */
-    private void checkNotSuperAdminUser(Long id) {
-        var superAdminCodes = authProperties.getSuperAdmin().getRoleCodes();
-        if (superAdminCodes.isEmpty()) {
-            return;
-        }
-        var roleIds = userRoleService.getRoleIdsByUserId(id);
-        if (roleIds.isEmpty()) {
-            return;
-        }
-        var hasSuperRole = roleService.listByIds(roleIds).stream()
-                .anyMatch(role -> superAdminCodes.contains(role.getRoleKey()));
-        AssertUtils.isFalse(hasSuperRole, "超管账户不允许修改状态");
     }
 
     /**

@@ -38,12 +38,14 @@ public class UserController {
 
     @Operation(summary = "分页查询")
     @GetMapping("/page")
+    @PreAuthorize("@perm.has('system:user:list')")
     public R<IPage<SysUser>> page(@Valid UserPageQuery query) {
         return R.ok(userService.page(query));
     }
 
     @Operation(summary = "查询详情（含角色、部门 ID）")
     @GetMapping("/{id}")
+    @PreAuthorize("@perm.has('system:user:query')")
     public R<UserDetailVO> getById(@PathVariable Long id) {
         return R.ok(userService.getUserDetail(id));
     }
@@ -58,6 +60,7 @@ public class UserController {
 
     @Operation(summary = "修改用户")
     @PutMapping
+    @PreAuthorize("@perm.has('system:user:edit')")
     public R<Void> update(@Valid @RequestBody SysUser user) {
         userService.update(user);
         return R.ok();
@@ -65,6 +68,7 @@ public class UserController {
 
     @Operation(summary = "删除用户")
     @DeleteMapping
+    @PreAuthorize("@perm.has('system:user:remove')")
     public R<Void> delete(@RequestBody Set<Long> ids) {
         userService.delete(ids);
         return R.ok();
@@ -72,6 +76,7 @@ public class UserController {
 
     @Operation(summary = "重置密码")
     @PutMapping("/{id}/password")
+    @PreAuthorize("@perm.has('system:user:password')")
     public R<Void> resetPassword(@PathVariable Long id, @Valid @RequestBody ResetPasswordRequest request) {
         userService.resetPassword(id, request.password());
         return R.ok();
@@ -82,6 +87,7 @@ public class UserController {
 
     @Operation(summary = "分配角色")
     @PutMapping("/{id}/roles")
+    @PreAuthorize("@perm.has('system:user:roles')")
     public R<Void> assignRoles(@PathVariable Long id, @RequestBody Set<Long> roleIds) {
         userService.assignRoles(id, roleIds);
         return R.ok();
@@ -89,12 +95,14 @@ public class UserController {
 
     @Operation(summary = "查询用户角色 ID 列表")
     @GetMapping("/{id}/roles")
+    @PreAuthorize("@perm.has('system:user:query')")
     public R<Set<Long>> getRoleIds(@PathVariable Long id) {
         return R.ok(userService.getRoleIds(id));
     }
 
     @Operation(summary = "分配部门")
     @PutMapping("/{id}/depts")
+    @PreAuthorize("@perm.has('system:user:depts')")
     public R<Void> assignDepts(@PathVariable Long id, @RequestBody Set<Long> deptIds) {
         userService.assignDepts(id, deptIds);
         return R.ok();
@@ -102,12 +110,14 @@ public class UserController {
 
     @Operation(summary = "查询用户部门 ID 列表")
     @GetMapping("/{id}/depts")
+    @PreAuthorize("@perm.has('system:user:query')")
     public R<Set<Long>> getDeptIds(@PathVariable Long id) {
         return R.ok(userService.getDeptIds(id));
     }
 
     @Operation(summary = "设置用户状态")
     @PutMapping("/{id}/status")
+    @PreAuthorize("@perm.has('system:user:status')")
     public R<Void> setEnabled(@PathVariable Long id, @RequestParam boolean enabled) {
         userService.setEnabled(id, enabled);
         return R.ok();

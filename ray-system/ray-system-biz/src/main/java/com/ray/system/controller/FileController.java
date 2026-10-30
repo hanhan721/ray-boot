@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.constraints.NotEmpty;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -33,6 +34,7 @@ public class FileController {
 
     @Operation(summary = "上传文件")
     @PostMapping("/upload")
+    @PreAuthorize("@perm.has('system:file:upload')")
     public R<FileUploadVO> upload(@RequestParam("file") MultipartFile file,
                                   @RequestParam(required = false) String bizType,
                                   @RequestParam(required = false) Long bizId) {
@@ -41,6 +43,7 @@ public class FileController {
 
     @Operation(summary = "批量上传文件")
     @PostMapping("/upload/batch")
+    @PreAuthorize("@perm.has('system:file:upload')")
     public R<List<FileUploadVO>> uploadBatch(@RequestParam("files") List<MultipartFile> files,
                                              @RequestParam(required = false) String bizType,
                                              @RequestParam(required = false) Long bizId) {
@@ -49,6 +52,7 @@ public class FileController {
 
     @Operation(summary = "下载文件")
     @GetMapping("/download")
+    @PreAuthorize("@perm.has('system:file:download')")
     public void download(@RequestParam(required = false) String bucket,
                          @RequestParam String filePath,
                          HttpServletResponse response) {
@@ -78,12 +82,14 @@ public class FileController {
 
     @Operation(summary = "查询详情")
     @GetMapping("/{id}")
+    @PreAuthorize("@perm.has('system:file:query')")
     public R<SysFile> getById(@PathVariable Long id) {
         return R.ok(fileService.getById(id));
     }
 
     @Operation(summary = "删除文件")
     @DeleteMapping
+    @PreAuthorize("@perm.has('system:file:remove')")
     public R<Void> delete(@RequestBody @NotEmpty(message = "ID 集合不能为空") Set<Long> ids) {
         fileService.delete(ids);
         return R.ok();

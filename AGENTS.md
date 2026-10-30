@@ -463,6 +463,9 @@ if (!CollectionUtils.isEmpty(list)) { ... }    // 非空
 错误码: 200 成功 | 401 未登录 | 403 无权限 | 555 业务错误
 
 ### Git 提交
+
+- 单元测试仅保留在本地，通过 `.git/info/exclude` 排除，不纳入 Git 跟踪或提交，不使用 `.gitignore` 排除。
+
 ```
 <type>(<scope>): <subject>
 ```

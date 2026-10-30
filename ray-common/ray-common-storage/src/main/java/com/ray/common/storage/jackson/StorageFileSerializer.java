@@ -22,7 +22,7 @@ import java.util.Map;
  */
 public class StorageFileSerializer extends StdScalarSerializer<String> {
 
-    private static final String URL_CACHE_PREFIX = "storage:url:";
+    private static final String URL_CACHE_PREFIX = "storage:url:v2:";
     private static final String NAME_CACHE_PREFIX = "storage:name:";
     private static final Duration URL_CACHE_MARGIN = Duration.ofMinutes(1);
     private static final Duration NAME_CACHE_TTL = Duration.ofDays(7);

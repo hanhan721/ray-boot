@@ -7,6 +7,7 @@ import com.ray.common.core.util.AssertUtils;
 import com.ray.common.storage.service.FileNameResolver;
 import com.ray.common.storage.storage.StorageService;
 import com.ray.common.storage.util.FilePathUtils;
+import com.ray.common.storage.util.FileContentUtils;
 import com.ray.system.api.entity.SysFile;
 import com.ray.system.mapper.FileMapper;
 import com.ray.system.service.FileService;
@@ -19,16 +20,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
-import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.BufferedInputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -52,10 +54,11 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, SysFile> implements
         var filePath = FilePathUtils.generatePath(originalName);
         var fileName = FilePathUtils.getFileName(filePath);
         var fileExt = FilePathUtils.getExtension(originalName);
-        var contentType = file.getContentType();
+        String contentType;
 
         // 存储文件
-        try (var inputStream = file.getInputStream()) {
+        try (var inputStream = new BufferedInputStream(file.getInputStream())) {
+            contentType = FileContentUtils.detectContentType(inputStream);
             storageService.upload(inputStream, filePath, contentType, file.getSize());
         } catch (IOException e) {
             log.error("读取上传文件失败: {}", originalName, e);
@@ -97,7 +100,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, SysFile> implements
         );
         AssertUtils.notNull(sysFile, "文件不存在");
 
-        try (var inputStream = storageService.download(bucket, filePath);
+        try (var inputStream = storageService.download(sysFile.getBucket(), filePath);
              var outputStream = response.getOutputStream()) {
             var encodedName = URLEncoder.encode(sysFile.getOriginalName(), StandardCharsets.UTF_8)
                     .replace("+", "%20");
@@ -118,14 +121,15 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, SysFile> implements
         var sysFile = super.getOne(
                 Wrappers.<SysFile>lambdaQuery().eq(SysFile::getFilePath, filePath)
         );
+        AssertUtils.notNull(sysFile, "文件不存在");
 
-        try (var inputStream = storageService.download(bucket, filePath);
+        try (var inputStream = new BufferedInputStream(storageService.download(sysFile.getBucket(), filePath));
              var outputStream = response.getOutputStream()) {
-            String contentType = sysFile != null && StringUtils.hasText(sysFile.getContentType())
-                    ? sysFile.getContentType()
-                    : MediaType.APPLICATION_OCTET_STREAM_VALUE;
+            var contentType = FileContentUtils.detectContentType(inputStream);
             response.setContentType(contentType);
-            if (sysFile != null && sysFile.getFileSize() != null && sysFile.getFileSize() > 0) {
+            response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
+                    FileContentUtils.contentDisposition(contentType, sysFile.getOriginalName()));
+            if (sysFile.getFileSize() != null && sysFile.getFileSize() > 0) {
                 response.setContentLengthLong(sysFile.getFileSize());
             }
             inputStream.transferTo(outputStream);
@@ -148,13 +152,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, SysFile> implements
             return;
         }
 
-        // 批量删除物理文件
-        var filePaths = files.stream().map(SysFile::getFilePath).toList();
-        try {
-            storageService.batchDelete(filePaths);
-        } catch (Exception e) {
-            log.warn("物理文件批量删除失败，继续删除数据库记录: count={}", filePaths.size(), e);
-        }
+        this.deleteStoredFiles(files);
 
         // 逻辑删除数据库记录
         super.removeByIds(ids);
@@ -173,18 +171,27 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, SysFile> implements
                 Wrappers.<SysFile>lambdaQuery().in(SysFile::getFilePath, filePaths)
         );
 
-        // 批量删除物理文件
-        try {
-            storageService.batchDelete(bucket, filePaths);
-        } catch (Exception e) {
-            log.warn("物理文件批量删除失败，继续删除数据库记录: bucket={}, count={}", bucket, filePaths.size(), e);
-        }
+        this.deleteStoredFiles(files);
 
         // 逻辑删除数据库记录
         if (!CollectionUtils.isEmpty(files)) {
             var ids = files.stream().map(SysFile::getId).toList();
             super.removeByIds(ids);
         }
+    }
+
+    private void deleteStoredFiles(List<SysFile> files) {
+        var pathsByBucket = new LinkedHashMap<String, List<String>>();
+        for (var file : files) {
+            pathsByBucket.computeIfAbsent(file.getBucket(), _ -> new ArrayList<>()).add(file.getFilePath());
+        }
+        pathsByBucket.forEach((bucket, paths) -> {
+            try {
+                storageService.batchDelete(bucket, paths);
+            } catch (Exception e) {
+                log.warn("物理文件批量删除失败，继续删除数据库记录: bucket={}, count={}", bucket, paths.size(), e);
+            }
+        });
     }
 
     @Override

@@ -26,7 +26,7 @@ public interface FileService extends IService<SysFile> {
     /**
      * 下载文件
      *
-     * @param bucket   存储桶（可为空，为空则自动判断）
+     * @param bucket   兼容参数，实际使用文件记录中的存储桶
      * @param filePath 存储路径
      */
     void download(String bucket, String filePath, HttpServletResponse response);
@@ -44,7 +44,7 @@ public interface FileService extends IService<SysFile> {
     /**
      * 异步批量删除文件（物理文件 + 数据库记录）
      *
-     * @param bucket    存储桶，为空则使用默认桶
+     * @param bucket    兼容参数，实际按文件记录中的存储桶分组删除
      * @param filePaths 存储路径列表
      */
     void deleteByFilePaths(String bucket, List<String> filePaths);

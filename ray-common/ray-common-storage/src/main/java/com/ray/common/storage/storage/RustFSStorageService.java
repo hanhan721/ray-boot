@@ -3,6 +3,7 @@ package com.ray.common.storage.storage;
 import com.ray.common.core.exception.BusinessException;
 import com.ray.common.storage.config.StorageProperties;
 import com.ray.common.storage.enums.StorageType;
+import com.ray.common.storage.util.FileContentUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -20,6 +21,8 @@ import jakarta.annotation.PreDestroy;
 import com.google.common.collect.Lists;
 
 import java.io.InputStream;
+import java.io.BufferedInputStream;
+import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
 import java.util.List;
@@ -64,17 +67,19 @@ public class RustFSStorageService implements StorageService {
 
     @Override
     public void upload(InputStream inputStream, String filePath, String contentType, long contentLength) {
-        try {
+        try (var buffered = new BufferedInputStream(inputStream)) {
+            var safeType = FileContentUtils.detectContentType(buffered);
             s3Client.putObject(
                     PutObjectRequest.builder()
                             .bucket(bucket)
                             .key(filePath)
-                            .contentType(contentType)
+                            .contentType(safeType)
+                            .contentDisposition(FileContentUtils.contentDisposition(safeType, filePath))
                             .contentLength(contentLength)
                             .build(),
-                    RequestBody.fromInputStream(inputStream, contentLength)
+                    RequestBody.fromInputStream(buffered, contentLength)
             );
-        } catch (S3Exception e) {
+        } catch (S3Exception | IOException e) {
             log.error("RustFS 上传异常: {}", filePath, e);
             throw new BusinessException("文件上传失败");
         }
@@ -174,14 +179,32 @@ public class RustFSStorageService implements StorageService {
     @Override
     public String getAccessUrl(String bucket, String filePath, Duration duration) {
         var targetBucket = StringUtils.hasText(bucket) ? bucket : this.bucket;
+        var contentType = this.getSafeContentType(targetBucket, filePath);
         var request = GetObjectPresignRequest.builder()
                 .signatureDuration(duration)
                 .getObjectRequest(GetObjectRequest.builder()
                         .bucket(targetBucket)
                         .key(filePath)
+                        .responseContentType(contentType)
+                        .responseContentDisposition(FileContentUtils.contentDisposition(contentType, filePath))
                         .build())
                 .build();
         return s3Presigner.presignGetObject(request).url().toString();
+    }
+
+    private String getSafeContentType(String bucket, String filePath) {
+        // 旧对象的 Content-Type 可能来自客户端；读取签名并在直链响应中覆盖，保护已有文件。
+        try (var input = s3Client.getObject(GetObjectRequest.builder().bucket(bucket).key(filePath)
+                .range("bytes=0-" + (FileContentUtils.SIGNATURE_LENGTH - 1)).build())) {
+            return FileContentUtils.detectContentType(input.readNBytes(FileContentUtils.SIGNATURE_LENGTH));
+        } catch (S3Exception e) {
+            if (e.statusCode() == 416) {
+                return FileContentUtils.BINARY_TYPE;
+            }
+            throw new BusinessException("文件访问链接生成失败");
+        } catch (IOException e) {
+            throw new BusinessException("文件访问链接生成失败");
+        }
     }
 
     @Override

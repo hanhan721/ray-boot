@@ -70,19 +70,19 @@ public class AuthServiceImpl implements AuthService {
     @Transactional(rollbackFor = Exception.class)
     public LoginVO login(LoginRequest request, HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         var username = request.username();
+        var clientIp = this.getClientIp(httpRequest);
 
         // 1. 检查登录失败次数
-        this.checkLoginAttempts(username);
+        this.checkLoginAttempts(username, clientIp);
 
         // 2. 查询用户
-        var clientIp = this.getClientIp(httpRequest);
         var userAgent = httpRequest.getHeader("User-Agent");
         var user = userService.getByUsername(username);
         // 两个分支执行相同的匹配流程，超长密码也不能通过 encode/matches 的差异枚举用户。
         var passwordHash = user != null ? user.getPassword() : DUMMY_PASSWORD_HASH;
         var passwordMatches = passwordEncoder.matches(request.password(), passwordHash);
         if (user == null || !passwordMatches) {
-            this.recordLoginFail(username);
+            this.recordLoginFail(username, clientIp);
             this.publishLoginLog(username, clientIp, userAgent, false, "用户名或密码错误");
             throw new BusinessException(ResultCode.UNAUTHORIZED, "用户名或密码错误");
         }
@@ -91,7 +91,7 @@ public class AuthServiceImpl implements AuthService {
         user = userService.getByIdForUpdate(user.getId());
         if (user == null || !Boolean.TRUE.equals(user.getEnabled())
                 || !Objects.equals(passwordHash, user.getPassword())) {
-            this.recordLoginFail(username);
+            this.recordLoginFail(username, clientIp);
             this.publishLoginLog(username, clientIp, userAgent, false, "账号不存在、已被禁用或凭据已变更");
             throw new BusinessException(ResultCode.UNAUTHORIZED, "用户名或密码错误");
         }
@@ -120,7 +120,7 @@ public class AuthServiceImpl implements AuthService {
         this.setRefreshTokenCookie(httpRequest, httpResponse, rawRefreshToken);
 
         // 10. 清除登录失败计数
-        this.clearLoginFail(username);
+        this.clearLoginFail(username, clientIp);
 
         // 11. 更新最后登录信息
         user.setLastLoginTime(LocalDateTime.now())
@@ -284,27 +284,29 @@ public class AuthServiceImpl implements AuthService {
 
     // ==================== 登录失败限制 ====================
 
-    private void checkLoginAttempts(String username) {
-        var key = AuthCacheConstants.LOGIN_FAIL_KEY_PREFIX + username;
-        var attempts = valkeyUtils.get(key, Integer.class);
+    private void checkLoginAttempts(String username, String clientIp) {
+        var key = this.loginFailKey(username, clientIp);
+        var attempts = valkeyUtils.get(key, Number.class);
 
-        if (attempts != null && attempts >= authProperties.getSecurity().getMaxLoginAttempts()) {
+        if (attempts != null && attempts.longValue() >= authProperties.getSecurity().getMaxLoginAttempts()) {
             var ttl = valkeyUtils.getExpire(key);
             var minutes = ttl != null ? (ttl / 60 + 1) : authProperties.getSecurity().getLockDuration();
             throw new BusinessException(ResultCode.UNAUTHORIZED, "登录失败次数过多，请" + minutes + "分钟后重试");
         }
     }
 
-    private void recordLoginFail(String username) {
-        var key = AuthCacheConstants.LOGIN_FAIL_KEY_PREFIX + username;
-        var attempts = valkeyUtils.increment(key);
-        if (attempts != null && attempts == 1) {
-            valkeyUtils.expire(key, authProperties.getSecurity().getLockDuration(), TimeUnit.MINUTES);
-        }
+    private void recordLoginFail(String username, String clientIp) {
+        valkeyUtils.incrementWithExpire(this.loginFailKey(username, clientIp),
+                authProperties.getSecurity().getLockDuration(), TimeUnit.MINUTES);
     }
 
-    private void clearLoginFail(String username) {
-        valkeyUtils.delete(AuthCacheConstants.LOGIN_FAIL_KEY_PREFIX + username);
+    private void clearLoginFail(String username, String clientIp) {
+        valkeyUtils.delete(this.loginFailKey(username, clientIp));
+    }
+
+    private String loginFailKey(String username, String clientIp) {
+        // 独立命名空间使升级前的账号级锁定不再影响其他来源；长度前缀避免分隔符碰撞。
+        return AuthCacheConstants.LOGIN_FAIL_KEY_PREFIX + "v2:" + username.length() + ":" + username + ":" + clientIp;
     }
 
     // ==================== 登录日志 ====================

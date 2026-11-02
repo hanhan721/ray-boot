@@ -39,7 +39,7 @@ public class OnlineUserServiceImpl implements OnlineUserService {
 
     @Override
     public List<OnlineUserVO> list(String username, String loginIp) {
-        // 1. SCAN 直接扫描所有 token:* 获取全部活跃 token key
+        // 1. 扫描尚未过期的 Token Hash，包含供管理员踢除的旧会话。
         var tokenKeys = valkeyUtils.scan(AuthCacheConstants.TOKEN_KEY_PREFIX + "*", 200);
         if (CollectionUtils.isEmpty(tokenKeys)) {
             return List.of();
@@ -60,6 +60,7 @@ public class OnlineUserServiceImpl implements OnlineUserService {
                     var uuid = keyList.get(i).substring(prefixLen);
                     var sessionId = (String) fields.get(AuthCacheConstants.FIELD_SESSION_ID);
                     if (!StringUtils.hasText(sessionId)) {
+                        // 补充旧会话的管理索引，不恢复其认证能力。
                         sessionId = tokenService.registerSession(uuid);
                     }
                     return sessionId != null ? this.buildOnlineUserVO(sessionId, fields) : null;

@@ -73,6 +73,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         super.save(permission);
         // enabled 由数据库 DEFAULT 决定，插入后读取有效值。
         var saved = super.getById(permission.getId());
+        AssertUtils.notNull(saved, "新增权限失败");
         sessionCoordinator.revokePermissionUsers(Set.of(permission.getId()),
                 Boolean.TRUE.equals(saved.getEnabled()) && StringUtils.hasText(saved.getCode()));
     }

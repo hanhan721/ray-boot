@@ -98,7 +98,8 @@ public class TokenService {
     }
 
     /**
-     * 为升级前签发的 Access Token 补充管理索引，过期时间不超过原令牌剩余寿命。
+     * 为缺少会话标识的旧 Token 补充管理索引，过期时间不超过原令牌剩余寿命。
+     * <p>仅用于管理端展示和踢除旧会话及其 Refresh Token；缺少授权快照的 Token 仍无法通过认证。
      */
     public String registerSession(String accessToken) {
         var remainingSeconds = valkeyUtils.getExpire(AuthCacheConstants.TOKEN_KEY_PREFIX + accessToken);
@@ -166,28 +167,6 @@ public class TokenService {
                 .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
                 .toList();
         return new TokenAuthentication(uuid, loginUser, authorities, authorization);
-    }
-
-    /**
-     * 删除单个 Access Token
-     *
-     * @param uuid   Access Token UUID
-     * @param userId 用户 ID
-     */
-    public void removeAccessToken(String uuid, Long userId) {
-        valkeyUtils.delete(AuthCacheConstants.TOKEN_KEY_PREFIX + uuid);
-        valkeyUtils.delete(AuthCacheConstants.SESSION_KEY_PREFIX + this.sessionId(uuid));
-        valkeyUtils.sRemove(AuthCacheConstants.USER_TOKENS_KEY_PREFIX + userId, uuid);
-        log.debug("删除 Access Token: userId={}", userId);
-    }
-
-    /**
-     * 删除用户的所有 Access Token（踢人下线）
-     *
-     * @param userId 用户 ID
-     */
-    public void removeAllTokens(Long userId) {
-        this.revokeCapturedTokens(this.captureUserTokens(Set.of(userId)), false);
     }
 
     /** 捕获用户现有 Token；此处不读取或加载授权。 */

@@ -14,10 +14,8 @@ import com.ray.system.api.domain.LoginRequest;
 import com.ray.system.api.domain.LoginVO;
 import com.ray.system.api.domain.RefreshVO;
 import com.ray.system.api.domain.UserInfoVO;
-import com.ray.system.api.domain.UserPermissionDTO;
-import com.ray.system.api.entity.SysPermission;
-import com.ray.system.api.entity.SysRole;
 import com.ray.system.event.LoginLogEvent;
+import com.ray.system.security.AuthorizationSessionCoordinator;
 import com.ray.system.service.*;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,18 +27,15 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.CollectionUtils;
-import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Arrays;
-import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -55,16 +50,14 @@ public class AuthServiceImpl implements AuthService {
     private static final String DUMMY_PASSWORD_HASH = "$2a$10$OL.cIpk1mSCW/8.JxafI9emBwBLGsjBS5m5q83Nzz14k8VioLmO2q";
 
     private final UserService userService;
-    private final UserRoleService userRoleService;
-    private final RoleService roleService;
-    private final PermissionService permissionService;
     private final RefreshTokenService refreshTokenService;
     private final TokenService tokenService;
     private final PasswordEncoder passwordEncoder;
     private final AuthProperties authProperties;
     private final ValkeyUtils valkeyUtils;
     private final ApplicationEventPublisher eventPublisher;
-    private final JsonMapper jsonMapper;
+    private final PermissionService permissionService;
+    private final AuthorizationSessionCoordinator sessionCoordinator;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -87,6 +80,8 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "用户名或密码错误");
         }
 
+        sessionCoordinator.lockForIssuance();
+
         // 3. 与角色更新共用用户行锁，并重新检查 BCrypt 运算期间可能发生的禁用或密码重置。
         user = userService.getByIdForUpdate(user.getId());
         if (user == null || !Boolean.TRUE.equals(user.getEnabled())
@@ -96,40 +91,34 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "用户名或密码错误");
         }
 
-        // 4. 加载角色
-        var roleKeys = this.getRoleKeys(user.getId());
-
-        // 5. 缓存菜单和权限
-        this.cacheUserPermissions(user.getId(), roleKeys);
-
-        // 6. 生成 Access Token
-        var loginUser = new LoginUser(user.getId(), user.getUsername(), roleKeys, LocalDateTime.now(), clientIp);
+        // 4. 在共享协调锁和用户行锁内加载授权并签发会话。
+        var loginUser = new LoginUser(user.getId(), user.getUsername(), Set.of(), LocalDateTime.now(), clientIp);
         var browser = UserAgentUtils.parseBrowser(userAgent);
         var os = UserAgentUtils.parseOs(userAgent);
         var accessToken = tokenService.createAccessToken(loginUser, user.getNickname(), browser, os);
 
-        // 7. 支持多设备并发登录，不再清除旧 Refresh Token
+        // 5. 支持多设备并发登录，不再清除旧 Refresh Token
         // 如需恢复单设备登录策略，取消下行注释即可
         // refreshTokenService.deleteByUserId(user.getId());
 
-        // 8. 生成新的 Refresh Token
+        // 6. 生成新的 Refresh Token
         var rawRefreshToken = UUID.randomUUID().toString();
         refreshTokenService.create(rawRefreshToken, user.getId(), accessToken, userAgent, clientIp);
 
-        // 9. 设置新的 Refresh Token Cookie
+        // 7. 设置新的 Refresh Token Cookie
         this.setRefreshTokenCookie(httpRequest, httpResponse, rawRefreshToken);
 
-        // 10. 清除登录失败计数
+        // 8. 清除登录失败计数
         this.clearLoginFail(username, clientIp);
 
-        // 11. 更新最后登录信息
+        // 9. 更新最后登录信息
         user.setLastLoginTime(LocalDateTime.now())
                 .setLastLoginIp(clientIp);
         userService.updateById(user);
 
         log.info("用户登录成功: username={}, ip={}", username, clientIp);
 
-        // 12. 记录登录日志
+        // 10. 记录登录日志
         this.publishLoginLog(username, clientIp, userAgent, true, "登录成功");
 
         var expireIn = (long) authProperties.getToken().getAccessExpire() * 60;
@@ -144,6 +133,8 @@ public class AuthServiceImpl implements AuthService {
         if (rawRefreshToken == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "Refresh Token 不存在");
         }
+
+        sessionCoordinator.lockForIssuance();
 
         // 2. 验证 Refresh Token
         var refreshToken = refreshTokenService.verify(rawRefreshToken);
@@ -166,27 +157,23 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // 4. 删除旧 Access Token
-        tokenService.removeAccessToken(refreshToken.getAccessToken(), user.getId());
+        tokenService.revokeAfterCommit(Map.of(user.getId(), Set.of(refreshToken.getAccessToken())));
 
         // 5. 删除旧 Refresh Token
         refreshTokenService.deleteByTokenHash(refreshToken.getTokenHash());
 
         // 6. 生成新 Access Token
-        var roleKeys = this.getRoleKeys(user.getId());
         var clientIp = this.getClientIp(httpRequest);
         var userAgent = httpRequest.getHeader("User-Agent");
-        var loginUser = new LoginUser(user.getId(), user.getUsername(), roleKeys, LocalDateTime.now(), clientIp);
+        var loginUser = new LoginUser(user.getId(), user.getUsername(), Set.of(), LocalDateTime.now(), clientIp);
         var newAccessToken = tokenService.createAccessToken(loginUser, user.getNickname(),
                 UserAgentUtils.parseBrowser(userAgent), UserAgentUtils.parseOs(userAgent));
 
-        // 7. 刷新菜单和权限缓存
-        this.cacheUserPermissions(user.getId(), roleKeys);
-
-        // 8. 生成新 Refresh Token (Rotation)
+        // 7. 生成新 Refresh Token (Rotation)
         var newRawRefreshToken = UUID.randomUUID().toString();
         refreshTokenService.create(newRawRefreshToken, user.getId(), newAccessToken, userAgent, clientIp);
 
-        // 9. 设置新 Refresh Token Cookie
+        // 8. 设置新 Refresh Token Cookie
         this.setRefreshTokenCookie(httpRequest, httpResponse, newRawRefreshToken);
 
         log.info("Token 续期成功: userId={}", user.getId());
@@ -198,6 +185,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void logout(HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
+        sessionCoordinator.lockForIssuance();
         var loginUser = SecurityUtils.getLoginUser();
         var accessToken = SecurityUtils.getAccessToken();
         var rawRefreshToken = this.extractRefreshToken(httpRequest);
@@ -214,7 +202,7 @@ public class AuthServiceImpl implements AuthService {
 
         if (loginUser != null && accessToken != null) {
             // 删除当前 Access Token
-            tokenService.removeAccessToken(accessToken, loginUser.userId());
+            tokenService.revokeAfterCommit(Map.of(loginUser.userId(), Set.of(accessToken)));
             // 删除与当前 Access Token 绑定的 Refresh Token，防止登出后仍可续期
             refreshTokenService.deleteByAccessToken(accessToken);
 
@@ -230,7 +218,7 @@ public class AuthServiceImpl implements AuthService {
         if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
             var verified = refreshTokenService.verify(rawRefreshToken);
             if (verified != null) {
-                tokenService.removeAccessToken(verified.getAccessToken(), verified.getUserId());
+                tokenService.revokeAfterCommit(Map.of(verified.getUserId(), Set.of(verified.getAccessToken())));
                 refreshTokenService.deleteByTokenHash(verified.getTokenHash());
             }
         }
@@ -251,34 +239,27 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "用户不存在");
         }
 
-        // 直接从缓存读取菜单和权限
-        var menusJson = tokenService.getMenus(loginUser.userId());
-        var menus = this.deserializeMenus(menusJson);
-
-        var permissions = tokenService.getPermissions(loginUser.userId());
+        var authorization = tokenService.getAuthorization(loginUser.userId());
+        var superAdmin = authorization.roles().stream().anyMatch(authProperties.getSuperAdmin().getRoleCodes()::contains);
+        var menus = superAdmin ? permissionService.getAllPermissionsDTO().menus()
+                : permissionService.getUserPermissions(loginUser.userId()).menus();
 
         return new UserInfoVO(
                 user.getId(),
                 user.getUsername(),
                 user.getNickname(),
                 user.getAvatar(),
-                loginUser.roles(),
+                authorization.roles(),
                 menus,
-                permissions
+                authorization.permissions()
         );
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void kickUser(Long userId) {
-        // 删除所有 Access Token
-        tokenService.removeAllTokens(userId);
-        // 删除所有 Refresh Token
-        refreshTokenService.deleteByUserId(userId);
-        // 清除菜单缓存
-        tokenService.removeMenus(userId);
-        // 清除权限缓存
-        tokenService.removePermissions(userId);
-
+        sessionCoordinator.lockForChange();
+        sessionCoordinator.revokeUsers(Set.of(userId));
         log.info("踢掉用户所有设备: userId={}", userId);
     }
 
@@ -316,20 +297,6 @@ public class AuthServiceImpl implements AuthService {
     }
 
     // ==================== 辅助方法 ====================
-
-    /**
-     * 获取用户角色标识集合
-     */
-    private Set<String> getRoleKeys(Long userId) {
-        var roleIds = userRoleService.getRoleIdsByUserId(userId);
-        if (CollectionUtils.isEmpty(roleIds)) {
-            return Set.of();
-        }
-        return roleService.listByIds(roleIds).stream()
-                .filter(role -> Boolean.TRUE.equals(role.getEnabled()))
-                .map(SysRole::getRoleKey)
-                .collect(Collectors.toSet());
-    }
 
     /**
      * 从 Cookie 中提取 Refresh Token
@@ -382,72 +349,5 @@ public class AuthServiceImpl implements AuthService {
      */
     private String getClientIp(HttpServletRequest request) {
         return IpUtils.getClientIp(request);
-    }
-
-    /**
-     * 检查是否为超管角色
-     */
-    private boolean isSuperAdmin(Set<String> roleKeys) {
-        if (CollectionUtils.isEmpty(roleKeys)) {
-            return false;
-        }
-        var superAdminRoleCodes = authProperties.getSuperAdmin().getRoleCodes();
-        if (CollectionUtils.isEmpty(superAdminRoleCodes)) {
-            return false;
-        }
-        return roleKeys.stream().anyMatch(superAdminRoleCodes::contains);
-    }
-
-    /**
-     * 缓存用户菜单和权限
-     * 一次查询权限，然后在 Java 中分离菜单和权限编码
-     * 超管和普通用户都只需一次数据库查询
-     */
-    private void cacheUserPermissions(Long userId, Set<String> roleKeys) {
-        UserPermissionDTO permissionDto;
-
-        // 根据角色分别查询：超管查所有权限，普通用户查个人权限
-        if (this.isSuperAdmin(roleKeys)) {
-            // 超管：一次查询所有权限
-            permissionDto = permissionService.getAllPermissionsDTO();
-        } else {
-            // 普通用户：一次查询个人权限
-            permissionDto = permissionService.getUserPermissions(userId);
-        }
-
-        // 缓存菜单树
-        var menusJson = this.serializeMenus(permissionDto.menus());
-        tokenService.cacheMenus(userId, menusJson);
-
-        // 缓存权限编码
-        tokenService.cachePermissions(userId, permissionDto.permissions());
-    }
-
-    /**
-     * 菜单树序列化为 JSON
-     */
-    private String serializeMenus(List<SysPermission> menus) {
-        try {
-            return jsonMapper.writeValueAsString(menus);
-        } catch (Exception e) {
-            log.error("菜单序列化失败", e);
-            return "[]";
-        }
-    }
-
-    /**
-     * 菜单树从 JSON 反序列化
-     */
-    private List<SysPermission> deserializeMenus(String menusJson) {
-        try {
-            if (menusJson == null || menusJson.isBlank()) {
-                return List.of();
-            }
-            var ref = jsonMapper.getTypeFactory().constructCollectionType(List.class, SysPermission.class);
-            return jsonMapper.readValue(menusJson, ref);
-        } catch (Exception e) {
-            log.error("菜单反序列化失败", e);
-            return List.of();
-        }
     }
 }

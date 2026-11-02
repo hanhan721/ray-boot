@@ -1,6 +1,7 @@
 package com.ray.common.security.domain;
 
 import lombok.Getter;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 
@@ -18,12 +19,20 @@ public class TokenAuthentication extends AbstractAuthenticationToken {
 
     private final String accessToken;
     private final LoginUser loginUser;
+    private final @Nullable UserAuthorization authorization;
 
     public TokenAuthentication(String accessToken, LoginUser loginUser,
                                Collection<? extends GrantedAuthority> authorities) {
+        this(accessToken, loginUser, authorities, null);
+    }
+
+    public TokenAuthentication(String accessToken, LoginUser loginUser,
+                               Collection<? extends GrantedAuthority> authorities,
+                               @Nullable UserAuthorization authorization) {
         super(authorities);
         this.accessToken = accessToken;
         this.loginUser = loginUser;
+        this.authorization = authorization;
         super.setAuthenticated(true);
     }
 

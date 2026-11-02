@@ -326,7 +326,9 @@ private List<XxxReferenceChecker> referenceCheckers;
 
 ### 权限控制规范
 使用 `@PreAuthorize("@perm.has('permission:code')")` 进行权限检查，详见 `PermissionEvaluator` 组件。
-权限与角色分离，支持动态更新，无需重新登录即生效。
+权限与角色分离，授权变更后撤销受影响用户全部设备会话，要求重新登录。
+普通已登录请求从 Token Hash 一次 HGETALL 读取身份及授权快照，认证鉴权不查询 SQL；菜单按需查询。
+登录、刷新和授权变更通过 PostgreSQL 事务级 advisory lock 协调，先取得协调锁，再取得用户行锁。
 
 ### 响应字段翻译
 需要在响应 JSON 中为编码、ID 等字段追加可读文本时使用字段翻译。先在 Controller 类或方法上标记 `@EnableTranslate`，再在 VO/Entity 字段上标记 `@Translate`。

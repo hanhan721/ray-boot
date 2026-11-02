@@ -11,7 +11,7 @@ public final class AuthCacheConstants {
     /**
      * Access Token 主体 (Hash)
      * <p>格式: token:{uuid}
-     * <p>Fields: userId, username, roles, loginTime, loginIp
+     * <p>Fields: userId, username, roles, permissions, loginTime, loginIp
      */
     public static final String TOKEN_KEY_PREFIX = "token:";
 
@@ -29,20 +29,6 @@ public final class AuthCacheConstants {
     public static final String USER_TOKENS_KEY_PREFIX = "user_tokens:";
 
     /**
-     * 用户菜单缓存 (String)
-     * <p>格式: menu:{userId}
-     * <p>Value: JSON 序列化的菜单树
-     */
-    public static final String MENU_KEY_PREFIX = "menu:";
-
-    /**
-     * 用户权限缓存 (Set)
-     * <p>格式: permission:{userId}
-     * <p>Members: 权限编码集合
-     */
-    public static final String PERMISSION_KEY_PREFIX = "permission:";
-
-    /**
      * 登录失败计数 (String)
      * <p>格式: login_fail:{username}
      */
@@ -54,6 +40,7 @@ public final class AuthCacheConstants {
     public static final String FIELD_USERNAME = "username";
     public static final String FIELD_NICKNAME = "nickname";
     public static final String FIELD_ROLES = "roles";
+    public static final String FIELD_PERMISSIONS = "permissions";
     public static final String FIELD_LOGIN_TIME = "loginTime";
     public static final String FIELD_LOGIN_IP = "loginIp";
     public static final String FIELD_BROWSER = "browser";

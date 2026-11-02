@@ -3,16 +3,14 @@ package com.ray.system.service.impl;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.ray.common.core.util.AssertUtils;
+import com.ray.common.mybatis.util.PageUtils;
 import com.ray.common.mybatis.util.QueryWrapperHelper;
 import com.ray.system.api.domain.UserDetailVO;
 import com.ray.system.api.domain.UserPageQuery;
-import com.ray.common.core.util.AssertUtils;
-import com.ray.common.mybatis.util.PageUtils;
-import com.ray.common.security.service.TokenService;
 import com.ray.system.api.entity.SysUser;
 import com.ray.system.mapper.UserMapper;
-import com.ray.system.service.PermissionService;
-import com.ray.system.service.RefreshTokenService;
+import com.ray.system.security.AuthorizationSessionCoordinator;
 import com.ray.system.security.SuperAdminGuard;
 import com.ray.system.service.UserDeptService;
 import com.ray.system.service.UserRoleService;
@@ -35,9 +33,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     private final UserRoleService userRoleService;
     private final UserDeptService userDeptService;
     private final PasswordEncoder passwordEncoder;
-    private final TokenService tokenService;
-    private final PermissionService permissionService;
-    private final RefreshTokenService refreshTokenService;
+    private final AuthorizationSessionCoordinator sessionCoordinator;
     private final SuperAdminGuard superAdminGuard;
 
     @Override
@@ -89,6 +85,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void update(SysUser user) {
+        if (Boolean.FALSE.equals(user.getEnabled())) {
+            sessionCoordinator.lockForChange();
+        }
         AssertUtils.notNull(user.getId(), "用户 ID 不能为空");
         superAdminGuard.checkUsers(Set.of(user.getId()));
         this.checkUsernameUnique(user.getUsername(), user.getId());
@@ -114,24 +113,20 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             return;
         }
 
+        sessionCoordinator.lockForChange();
         superAdminGuard.checkUsers(ids);
+        sessionCoordinator.revokeUsers(ids);
 
         // 删除用户角色关联
         userRoleService.deleteByUserIds(ids);
 
         super.removeByIds(ids);
-
-        // 删除后立即踢掉残留会话，否则已签发的 Access Token 在过期前仍可调用业务接口
-        for (Long id : ids) {
-            if (id != null) {
-                this.kickUser(id);
-            }
-        }
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void resetPassword(Long id, String password) {
+        sessionCoordinator.lockForChange();
         AssertUtils.notNull(id, "用户 ID 不能为空");
         AssertUtils.notEmpty(password, "密码不能为空");
         superAdminGuard.checkUsers(Set.of(id));
@@ -148,6 +143,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void assignRoles(Long userId, Set<Long> roleIds) {
+        sessionCoordinator.lockForChange();
         AssertUtils.notNull(userId, "用户 ID 不能为空");
         AssertUtils.notNull(this.getByIdForUpdate(userId), "用户不存在");
         superAdminGuard.checkUsers(Set.of(userId));
@@ -155,11 +151,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
 
         userRoleService.saveUserRoles(userId, roleIds);
 
-        // 持有用户行锁期间作废旧角色快照；并发登录/续期须等到提交后才能读取角色和签发 Token。
-        tokenService.removeAllTokens(userId);
-        tokenService.removeMenus(userId);
-        tokenService.removePermissions(userId);
-        this.refreshPermissionCache(userId);
+        sessionCoordinator.revokeUsers(Set.of(userId));
     }
 
     @Override
@@ -184,6 +176,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void setEnabled(Long id, boolean enabled) {
+        if (!enabled) {
+            sessionCoordinator.lockForChange();
+        }
         AssertUtils.notNull(id, "用户 ID 不能为空");
         superAdminGuard.checkUsers(Set.of(id));
         var user = new SysUser();
@@ -210,21 +205,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         AssertUtils.isTrue(!super.exists(wrapper), "用户名已存在");
     }
 
-    /**
-     * 刷新用户权限缓存
-     */
-    private void refreshPermissionCache(Long userId) {
-        var permissions = permissionService.getCodesByUserId(userId);
-        tokenService.cachePermissions(userId, permissions);
-    }
-
-    /**
-     * 踢掉用户所有设备（删除所有 Token + 清除菜单/权限缓存）
-     */
+    /** 撤销全部设备，数据库回滚时保留原会话。 */
     private void kickUser(Long userId) {
-        tokenService.removeAllTokens(userId);
-        refreshTokenService.deleteByUserId(userId);
-        tokenService.removeMenus(userId);
-        tokenService.removePermissions(userId);
+        sessionCoordinator.revokeUsers(Set.of(userId));
     }
 }

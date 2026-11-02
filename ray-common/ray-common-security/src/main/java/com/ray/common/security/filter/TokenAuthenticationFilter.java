@@ -1,7 +1,5 @@
 package com.ray.common.security.filter;
 
-import com.ray.common.security.domain.LoginUser;
-import com.ray.common.security.domain.TokenAuthentication;
 import com.ray.common.security.service.TokenService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -9,7 +7,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -39,13 +36,8 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         var token = this.extractToken(request);
 
         if (token != null) {
-            LoginUser loginUser = tokenService.validateAccessToken(token);
-            if (loginUser != null) {
-                var authorities = loginUser.roles().stream()
-                        .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
-                        .toList();
-
-                var authentication = new TokenAuthentication(token, loginUser, authorities);
+            var authentication = tokenService.validateSession(token);
+            if (authentication != null) {
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         }

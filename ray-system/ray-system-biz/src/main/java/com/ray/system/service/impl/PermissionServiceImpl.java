@@ -4,25 +4,26 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.github.yulichang.wrapper.MPJLambdaWrapper;
 import com.ray.common.core.domain.TreeNode;
-import com.ray.common.core.util.TreeUtils;
 import com.ray.common.core.util.AssertUtils;
+import com.ray.common.core.util.TreeUtils;
 import com.ray.system.api.domain.UserPermissionDTO;
 import com.ray.system.api.entity.SysPermission;
+import com.ray.system.api.entity.SysRole;
 import com.ray.system.api.entity.SysRolePermission;
 import com.ray.system.api.entity.SysUserRole;
-import com.ray.system.api.entity.SysRole;
 import com.ray.system.api.enums.PermissionType;
 import com.ray.system.constant.SystemCacheConstants;
 import com.ray.system.mapper.PermissionMapper;
+import com.ray.system.security.AuthorizationSessionCoordinator;
 import com.ray.system.service.PermissionService;
 import com.ray.system.service.RolePermissionService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashSet;
 import java.util.List;
@@ -37,6 +38,7 @@ import java.util.stream.Collectors;
 public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPermission> implements PermissionService {
 
     private final RolePermissionService rolePermissionService;
+    private final AuthorizationSessionCoordinator sessionCoordinator;
 
     @Override
     public List<SysPermission> listAll() {
@@ -61,6 +63,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     @CacheEvict(cacheNames = SystemCacheConstants.PERMISSIONS, key = SystemCacheConstants.KEY_PERMISSION_TREE)
     @Override
     public void add(SysPermission permission) {
+        sessionCoordinator.lockForChange();
         this.validatePermission(permission);
         this.checkCodeUnique(permission.getCode(), null);
         if (permission.getParentId() == null) {
@@ -68,12 +71,20 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         }
         this.checkParentExists(permission.getParentId());
         super.save(permission);
+        // enabled 由数据库 DEFAULT 决定，插入后读取有效值。
+        var saved = super.getById(permission.getId());
+        sessionCoordinator.revokePermissionUsers(Set.of(permission.getId()),
+                Boolean.TRUE.equals(saved.getEnabled()) && StringUtils.hasText(saved.getCode()));
     }
 
     @Transactional(rollbackFor = Exception.class)
     @CacheEvict(cacheNames = SystemCacheConstants.PERMISSIONS, key = SystemCacheConstants.KEY_PERMISSION_TREE)
     @Override
     public void update(SysPermission permission) {
+        var authorizationWrite = permission.getCode() != null || permission.getEnabled() != null;
+        if (authorizationWrite) {
+            sessionCoordinator.lockForChange();
+        }
         AssertUtils.notNull(permission.getId(), "权限 ID 不能为空");
         this.validatePermission(permission);
         this.checkCodeUnique(permission.getCode(), permission.getId());
@@ -82,6 +93,9 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         }
         this.checkParentExists(permission.getParentId());
         this.checkCyclic(permission.getId(), permission.getParentId());
+        if (authorizationWrite) {
+            sessionCoordinator.revokePermissionUsers(Set.of(permission.getId()), true);
+        }
         super.updateById(permission);
     }
 
@@ -92,6 +106,8 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         if (CollectionUtils.isEmpty(ids)) {
             return;
         }
+        sessionCoordinator.lockForChange();
+        sessionCoordinator.revokePermissionUsers(ids, true);
         // 检查是否有子级（排除同时要删除的子级）
         var childCount = super.count(
                 Wrappers.<SysPermission>lambdaQuery()
@@ -183,6 +199,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
      */
     private void validatePermission(SysPermission permission) {
         switch (permission.getType()) {
+            case null -> { }
             case MENU -> AssertUtils.notEmpty(permission.getUrl(), "菜单路由路径不能为空");
             case BUTTON -> AssertUtils.notEmpty(permission.getCode(), "按钮权限标识不能为空");
             default -> { }

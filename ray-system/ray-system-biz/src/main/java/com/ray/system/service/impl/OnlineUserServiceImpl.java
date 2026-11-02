@@ -4,6 +4,7 @@ import com.ray.common.security.constant.AuthCacheConstants;
 import com.ray.common.security.service.TokenService;
 import com.ray.common.valkey.util.ValkeyUtils;
 import com.ray.system.api.domain.OnlineUserVO;
+import com.ray.system.security.AuthorizationSessionCoordinator;
 import com.ray.system.service.OnlineUserService;
 import com.ray.system.service.RefreshTokenService;
 import com.ray.system.service.UserService;
@@ -19,6 +20,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.IntStream;
 
 /**
@@ -33,6 +35,7 @@ public class OnlineUserServiceImpl implements OnlineUserService {
     private final TokenService tokenService;
     private final RefreshTokenService refreshTokenService;
     private final UserService userService;
+    private final AuthorizationSessionCoordinator sessionCoordinator;
 
     @Override
     public List<OnlineUserVO> list(String username, String loginIp) {
@@ -73,6 +76,7 @@ public class OnlineUserServiceImpl implements OnlineUserService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void kickByToken(String tokenId) {
+        sessionCoordinator.lockForChange();
         var accessToken = tokenService.getAccessTokenBySessionId(tokenId);
         if (accessToken == null) {
             return;
@@ -85,17 +89,16 @@ public class OnlineUserServiceImpl implements OnlineUserService {
             // 与续期共用用户行锁，使等待中的刷新在提交后重新验证到失效状态。
             userService.getByIdForUpdate(userId);
             refreshTokenService.deleteByAccessToken(accessToken);
-            tokenService.removeAccessToken(accessToken, userId);
+            tokenService.revokeAfterCommit(Map.of(userId, Set.of(accessToken)));
             log.info("强制下线单个会话: userId={}", userId);
         }
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void kickByUserId(Long userId) {
-        tokenService.removeAllTokens(userId);
-        refreshTokenService.deleteByUserId(userId);
-        tokenService.removeMenus(userId);
-        tokenService.removePermissions(userId);
+        sessionCoordinator.lockForChange();
+        sessionCoordinator.revokeUsers(Set.of(userId));
 
         log.info("强制下线用户所有会话: userId={}", userId);
     }

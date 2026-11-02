@@ -7,6 +7,9 @@ import com.ray.common.mybatis.util.QueryWrapperHelper;
 import com.ray.system.api.domain.RolePageQuery;
 import com.ray.common.core.util.AssertUtils;
 import com.ray.common.mybatis.util.PageUtils;
+import com.ray.system.api.entity.SysUserRole;
+import com.ray.system.service.UserRoleService;
+import com.ray.system.service.RolePermissionService;
 import com.ray.system.security.SuperAdminGuard;
 import com.ray.system.api.entity.SysRole;
 import com.ray.system.mapper.RoleMapper;
@@ -26,6 +29,8 @@ import java.util.Set;
 public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements RoleService {
 
     private final SuperAdminGuard superAdminGuard;
+    private final UserRoleService userRoleService;
+    private final RolePermissionService rolePermissionService;
 
     @Override
     public IPage<SysRole> page(RolePageQuery query) {
@@ -62,6 +67,8 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
             return;
         }
         superAdminGuard.checkRoles(ids);
+        userRoleService.remove(new LambdaQueryWrapper<SysUserRole>().in(SysUserRole::getRoleId, ids));
+        rolePermissionService.deleteByRoleIds(ids);
         super.removeByIds(ids);
     }
 

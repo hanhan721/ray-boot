@@ -10,14 +10,15 @@ import com.ray.system.api.domain.UserPermissionDTO;
 import com.ray.system.api.entity.SysPermission;
 import com.ray.system.api.entity.SysRolePermission;
 import com.ray.system.api.entity.SysUserRole;
+import com.ray.system.api.entity.SysRole;
 import com.ray.system.api.enums.PermissionType;
 import com.ray.system.constant.SystemCacheConstants;
 import com.ray.system.mapper.PermissionMapper;
 import com.ray.system.service.PermissionService;
 import com.ray.system.service.RolePermissionService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -56,7 +57,8 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         return super.getById(id);
     }
 
-    @CacheEvict(cacheNames = SystemCacheConstants.PERMISSIONS, allEntries = true)
+    @Transactional(rollbackFor = Exception.class)
+    @CacheEvict(cacheNames = SystemCacheConstants.PERMISSIONS, key = SystemCacheConstants.KEY_PERMISSION_TREE)
     @Override
     public void add(SysPermission permission) {
         this.validatePermission(permission);
@@ -68,7 +70,8 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         super.save(permission);
     }
 
-    @CacheEvict(cacheNames = SystemCacheConstants.PERMISSIONS, allEntries = true)
+    @Transactional(rollbackFor = Exception.class)
+    @CacheEvict(cacheNames = SystemCacheConstants.PERMISSIONS, key = SystemCacheConstants.KEY_PERMISSION_TREE)
     @Override
     public void update(SysPermission permission) {
         AssertUtils.notNull(permission.getId(), "权限 ID 不能为空");
@@ -82,8 +85,8 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         super.updateById(permission);
     }
 
-    @CacheEvict(cacheNames = SystemCacheConstants.PERMISSIONS, allEntries = true)
     @Transactional(rollbackFor = Exception.class)
+    @CacheEvict(cacheNames = SystemCacheConstants.PERMISSIONS, key = SystemCacheConstants.KEY_PERMISSION_TREE)
     @Override
     public void delete(Set<Long> ids) {
         if (CollectionUtils.isEmpty(ids)) {
@@ -106,16 +109,23 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     @Override
     public UserPermissionDTO getUserPermissions(Long userId) {
         // 一次性查询用户所有权限（菜单 + 权限代码），再在 Java 中分离
-        var wrapper = new MPJLambdaWrapper<SysPermission>()
-                .distinct()
-                .innerJoin(SysRolePermission.class, SysRolePermission::getPermissionId, SysPermission::getId)
-                .innerJoin(SysUserRole.class, SysUserRole::getRoleId, SysRolePermission::getRoleId)
-                .eq(SysUserRole::getUserId, userId)
-                .eq(SysPermission::getEnabled, true)
+        var wrapper = this.userPermissionsQuery(userId)
                 .orderByAsc(SysPermission::getSort);
 
         var allPermissions = baseMapper.selectJoinList(SysPermission.class, wrapper);
         return this.extractPermissionsDTO(allPermissions);
+    }
+
+    private MPJLambdaWrapper<SysPermission> userPermissionsQuery(Long userId) {
+        return new MPJLambdaWrapper<SysPermission>()
+                .distinct()
+                .innerJoin(SysRolePermission.class, SysRolePermission::getPermissionId, SysPermission::getId)
+                .innerJoin(SysUserRole.class, SysUserRole::getRoleId, SysRolePermission::getRoleId)
+                .innerJoin(SysRole.class, SysRole::getId, SysRolePermission::getRoleId)
+                .eq(SysUserRole::getUserId, userId)
+                .eq(SysRole::getEnabled, true)
+                .eq(SysRole::getDeleted, false)
+                .eq(SysPermission::getEnabled, true);
     }
 
     @Override
@@ -140,21 +150,31 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         var menuTree = TreeUtils.buildTree(menus);
 
         // 分离权限编码：所有 code 字段非空的权限
-        var permissions = allPermissions.stream()
+        return new UserPermissionDTO(menuTree, this.extractCodes(allPermissions));
+    }
+
+    private Set<String> extractCodes(List<SysPermission> permissions) {
+        return permissions.stream()
                 .map(SysPermission::getCode)
                 .filter(StringUtils::hasText)
                 .collect(Collectors.toSet());
-
-        return new UserPermissionDTO(menuTree, permissions);
     }
 
     @Override
     public Set<String> getCodesByUserId(Long userId) {
-        return this.getUserPermissions(userId).permissions();
+        var wrapper = this.userPermissionsQuery(userId).select(SysPermission::getCode);
+        return this.extractCodes(baseMapper.selectJoinList(SysPermission.class, wrapper));
     }
 
-    @CacheEvict(cacheNames = SystemCacheConstants.PERMISSIONS, key = SystemCacheConstants.KEY_PERMISSION_TREE)
     @Override
+    public Set<String> getAllCodes() {
+        return this.extractCodes(super.list(Wrappers.<SysPermission>lambdaQuery()
+                .select(SysPermission::getCode)
+                .eq(SysPermission::getEnabled, true)));
+    }
+
+    @Override
+    @CacheEvict(cacheNames = SystemCacheConstants.PERMISSIONS, key = SystemCacheConstants.KEY_PERMISSION_TREE)
     public void clearTreeCache() {
     }
 

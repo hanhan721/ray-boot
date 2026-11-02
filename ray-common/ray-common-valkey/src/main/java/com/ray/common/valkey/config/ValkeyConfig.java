@@ -94,14 +94,10 @@ public class ValkeyConfig {
                 .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(jsonSerializer))
                 .disableCachingNullValues();
 
-        // 系统参数缓存：无过期时间，通过业务逻辑手动失效
-        var paramConfig = RedisCacheConfiguration.defaultCacheConfig()
-                .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
-                .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(jsonSerializer));
-
+        // 写事务提交后再执行缓存写入和驱逐，回滚时丢弃这些操作。
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(config)
-                .withCacheConfiguration("sysParam", paramConfig)
+                .transactionAware()
                 .build();
     }
 

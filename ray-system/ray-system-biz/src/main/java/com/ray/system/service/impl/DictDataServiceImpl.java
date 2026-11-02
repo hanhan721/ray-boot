@@ -11,20 +11,26 @@ import com.ray.system.api.entity.SysDictData;
 import com.ray.system.mapper.DictDataMapper;
 import com.ray.system.constant.SystemCacheConstants;
 import com.ray.system.service.DictDataService;
-import org.springframework.cache.annotation.CacheEvict;
+import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.Objects;
 
 /**
  * 字典数据 Service 实现
  */
 @Service
+@RequiredArgsConstructor
 public class DictDataServiceImpl extends ServiceImpl<DictDataMapper, SysDictData> implements DictDataService {
+
+    private final CacheManager cacheManager;
 
     @Override
     public IPage<SysDictData> page(DictDataPageQuery query) {
@@ -58,10 +64,16 @@ public class DictDataServiceImpl extends ServiceImpl<DictDataMapper, SysDictData
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @CacheEvict(cacheNames = SystemCacheConstants.DICT_DATA, key = "#dictData.dictType")
     public void update(SysDictData dictData) {
         AssertUtils.notNull(dictData.getId(), "字典数据 ID 不能为空");
+        var existing = super.getById(dictData.getId());
+        AssertUtils.notNull(existing, "字典数据不存在");
         super.updateById(dictData);
+        var cache = Objects.requireNonNull(cacheManager.getCache(SystemCacheConstants.DICT_DATA));
+        cache.evict(existing.getDictType());
+        if (dictData.getDictType() != null && !existing.getDictType().equals(dictData.getDictType())) {
+            cache.evict(dictData.getDictType());
+        }
     }
 
     @Override

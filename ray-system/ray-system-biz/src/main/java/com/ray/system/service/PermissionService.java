@@ -83,4 +83,7 @@ public interface PermissionService extends IService<SysPermission> {
      * 清理权限树缓存
      */
     void clearTreeCache();
+
+    /** 查询全部有效权限码（超管）。 */
+    Set<String> getAllCodes();
 }

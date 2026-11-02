@@ -14,13 +14,15 @@ import com.ray.system.service.DictDataService;
 import com.ray.system.constant.SystemCacheConstants;
 import com.ray.system.service.DictTypeService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Set;
+import java.util.Objects;
 
 /**
  * 字典类型 Service 实现
@@ -30,6 +32,7 @@ import java.util.Set;
 public class DictTypeServiceImpl extends ServiceImpl<DictTypeMapper, SysDictType> implements DictTypeService {
 
     private final DictDataService dictDataService;
+    private final CacheManager cacheManager;
 
     @Override
     public IPage<SysDictType> page(DictTypePageQuery query) {
@@ -52,7 +55,8 @@ public class DictTypeServiceImpl extends ServiceImpl<DictTypeMapper, SysDictType
     }
 
     @Override
-    @Cacheable(cacheNames = SystemCacheConstants.DICT_TYPES, key = "#dictType")
+    @Cacheable(cacheNames = SystemCacheConstants.DICT_TYPES,
+            key = "#dictType", unless = "#result == null")
     public SysDictType getByDictType(String dictType) {
         return super.getOne(
                 Wrappers.<SysDictType>lambdaQuery()
@@ -85,6 +89,9 @@ public class DictTypeServiceImpl extends ServiceImpl<DictTypeMapper, SysDictType
                     .eq(SysDictData::getDictType, oldDictType.getDictType())
                     .set(SysDictData::getDictType, dictType.getDictType())
                     .update();
+            var cache = Objects.requireNonNull(cacheManager.getCache(SystemCacheConstants.DICT_DATA));
+            cache.evict(oldDictType.getDictType());
+            cache.evict(dictType.getDictType());
         }
 
         super.updateById(dictType);

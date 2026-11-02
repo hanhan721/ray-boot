@@ -18,10 +18,9 @@ import com.ray.system.mapper.ParamMapper;
 import com.ray.system.constant.SystemCacheConstants;
 import com.ray.system.service.ParamService;
 import com.ray.system.event.ParamChangedEvent;
-import com.ray.common.valkey.util.ValkeyUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.CacheManager;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -30,6 +29,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.List;
 import java.util.Set;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -42,7 +42,7 @@ public class ParamServiceImpl extends ServiceImpl<ParamMapper, SysParam> impleme
     private final ParamMapper paramMapper;
     private final ParamValueConverter paramValueConverter;
     private final ParamEncryptionHelper encryptionHelper;
-    private final ValkeyUtils valkeyUtils;
+    private final CacheManager cacheManager;
     private final ApplicationEventPublisher eventPublisher;
     private final ApplicationContext applicationContext;
 
@@ -52,7 +52,6 @@ public class ParamServiceImpl extends ServiceImpl<ParamMapper, SysParam> impleme
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @CacheEvict(cacheNames = SystemCacheConstants.SYS_PARAM, key = "#request.paramKey()")
     public Long create(ParamCreateRequest request) {
         // 检查参数键唯一性
         if (paramMapper.existsByParamKey(request.paramKey(), null)) {
@@ -82,6 +81,8 @@ public class ParamServiceImpl extends ServiceImpl<ParamMapper, SysParam> impleme
 
         // 保存到数据库
         super.save(param);
+        this.evictParamCache(param.getParamKey());
+        eventPublisher.publishEvent(new ParamChangedEvent(param.getParamKey()));
         return param.getId();
     }
 
@@ -120,7 +121,6 @@ public class ParamServiceImpl extends ServiceImpl<ParamMapper, SysParam> impleme
         // 更新到数据库
         super.updateById(param);
 
-        // 按前缀批量清除该参数的所有缓存变体（base + :string/:integer/:boolean/:json/:stringList）
         this.evictParamCache(param.getParamKey());
 
         // 发布参数变更事件
@@ -129,7 +129,6 @@ public class ParamServiceImpl extends ServiceImpl<ParamMapper, SysParam> impleme
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @CacheEvict(cacheNames = SystemCacheConstants.SYS_PARAM, allEntries = true)
     public void delete(Set<Long> ids) {
         if (ids == null || ids.isEmpty()) {
             return;
@@ -138,6 +137,7 @@ public class ParamServiceImpl extends ServiceImpl<ParamMapper, SysParam> impleme
         // 查出被删除的参数键，用于发布变更事件
         var params = super.listByIds(ids);
         super.removeBatchByIds(ids);
+        params.forEach(param -> this.evictParamCache(param.getParamKey()));
 
         // 发布参数变更事件
         params.forEach(p -> eventPublisher.publishEvent(new ParamChangedEvent(p.getParamKey())));
@@ -153,7 +153,8 @@ public class ParamServiceImpl extends ServiceImpl<ParamMapper, SysParam> impleme
     }
 
     @Override
-    @Cacheable(cacheNames = SystemCacheConstants.SYS_PARAM, key = "#paramKey")
+    @Cacheable(cacheNames = SystemCacheConstants.SYS_PARAM,
+            key = "#paramKey", unless = "#result == null")
     public Object getValueByKey(String paramKey) {
         SysParam param = paramMapper.selectByParamKey(paramKey);
         if (param == null) {
@@ -165,7 +166,8 @@ public class ParamServiceImpl extends ServiceImpl<ParamMapper, SysParam> impleme
     }
 
     @Override
-    @Cacheable(cacheNames = SystemCacheConstants.SYS_PARAM, key = "#paramKey + ':string'")
+    @Cacheable(cacheNames = SystemCacheConstants.SYS_PARAM,
+            key = "#paramKey + ':string'", unless = "#result == null")
     public String getStringByKey(String paramKey) {
         SysParam param = paramMapper.selectByParamKey(paramKey);
         if (param == null) {
@@ -175,9 +177,10 @@ public class ParamServiceImpl extends ServiceImpl<ParamMapper, SysParam> impleme
     }
 
     @Override
-    @Cacheable(cacheNames = SystemCacheConstants.SYS_PARAM, key = "#paramKey + ':integer'")
+    @Cacheable(cacheNames = SystemCacheConstants.SYS_PARAM,
+            key = "#paramKey + ':integer'", unless = "#result == null")
     public Integer getIntegerByKey(String paramKey) {
-        Object value = getSelf().getValueByKey(paramKey);
+        Object value = this.getSelf().getValueByKey(paramKey);
         if (value == null) {
             return null;
         }
@@ -188,9 +191,10 @@ public class ParamServiceImpl extends ServiceImpl<ParamMapper, SysParam> impleme
     }
 
     @Override
-    @Cacheable(cacheNames = SystemCacheConstants.SYS_PARAM, key = "#paramKey + ':boolean'")
+    @Cacheable(cacheNames = SystemCacheConstants.SYS_PARAM,
+            key = "#paramKey + ':boolean'", unless = "#result == null")
     public Boolean getBooleanByKey(String paramKey) {
-        Object value = getSelf().getValueByKey(paramKey);
+        Object value = this.getSelf().getValueByKey(paramKey);
         if (value == null) {
             return null;
         }
@@ -198,16 +202,18 @@ public class ParamServiceImpl extends ServiceImpl<ParamMapper, SysParam> impleme
     }
 
     @Override
-    @Cacheable(cacheNames = SystemCacheConstants.SYS_PARAM, key = "#paramKey + ':json'")
+    @Cacheable(cacheNames = SystemCacheConstants.SYS_PARAM,
+            key = "#paramKey + ':json'", unless = "#result == null")
     public Object getJsonByKey(String paramKey) {
-        return getSelf().getValueByKey(paramKey);
+        return this.getSelf().getValueByKey(paramKey);
     }
 
     @SuppressWarnings("unchecked")
     @Override
-    @Cacheable(cacheNames = SystemCacheConstants.SYS_PARAM, key = "#paramKey + ':stringList'")
+    @Cacheable(cacheNames = SystemCacheConstants.SYS_PARAM,
+            key = "#paramKey + ':stringList'", unless = "#result.isEmpty()")
     public List<String> getStringListByKey(String paramKey) {
-        Object value = getSelf().getValueByKey(paramKey);
+        Object value = this.getSelf().getValueByKey(paramKey);
         if (value == null) {
             return List.of();
         }
@@ -264,13 +270,12 @@ public class ParamServiceImpl extends ServiceImpl<ParamMapper, SysParam> impleme
         return vo;
     }
 
-    /**
-     * 按前缀批量清除参数缓存（SCAN + DELETE）
-     */
+    /** 事务感知 CacheManager 会在提交后驱逐全部类型键。 */
     private void evictParamCache(String paramKey) {
-        var keys = valkeyUtils.scan(SystemCacheConstants.SYS_PARAM + "::" + paramKey + "*", 100);
-        if (!keys.isEmpty()) {
-            valkeyUtils.delete(keys);
+        var cache = Objects.requireNonNull(cacheManager.getCache(SystemCacheConstants.SYS_PARAM));
+        cache.evict(paramKey);
+        for (var suffix : List.of(":string", ":integer", ":boolean", ":json", ":stringList")) {
+            cache.evict(paramKey + suffix);
         }
     }
 

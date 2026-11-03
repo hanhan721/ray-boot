@@ -6,9 +6,6 @@ import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.SessionCallback;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.data.redis.serializer.RedisSerializer;
-import org.springframework.data.redis.serializer.GenericToStringSerializer;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -20,14 +17,6 @@ import java.util.concurrent.TimeUnit;
 @Component
 @RequiredArgsConstructor
 public class ValkeyUtils {
-
-    private static final DefaultRedisScript<Long> INCREMENT_WITH_EXPIRE = new DefaultRedisScript<>("""
-            local count = redis.call('INCR', KEYS[1])
-            if redis.call('TTL', KEYS[1]) < 0 then
-                redis.call('EXPIRE', KEYS[1], ARGV[1])
-            end
-            return count
-            """, Long.class);
 
     private final RedisTemplate<String, Object> redisTemplate;
 
@@ -151,12 +140,6 @@ public class ValkeyUtils {
      */
     public Long increment(String key) {
         return redisTemplate.opsForValue().increment(key);
-    }
-
-    /** 原子递增并设置首次过期时间，后续递增不延长窗口。 */
-    public Long incrementWithExpire(String key, long timeout, TimeUnit unit) {
-        return redisTemplate.execute(INCREMENT_WITH_EXPIRE, RedisSerializer.string(), new GenericToStringSerializer<>(Long.class),
-                List.of(key), Long.toString(unit.toSeconds(timeout)));
     }
 
     /**

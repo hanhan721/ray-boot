@@ -86,7 +86,7 @@ public class AuthorizationSessionCoordinator {
         var sortedIds = new TreeSet<>(userIds);
         sortedIds.forEach(userMapper::selectByIdForUpdate);
         var tokens = tokenServices.getObject();
-        var captured = tokens.captureUserTokens(sortedIds);
+        var captured = tokens.captureUserSessions(sortedIds);
         refreshTokenService.remove(Wrappers.<RefreshToken>lambdaQuery().in(RefreshToken::getUserId, sortedIds));
         tokens.revokeAfterCommit(captured);
     }

@@ -22,7 +22,6 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
 
 /**
  * Token 核心服务
@@ -51,11 +50,11 @@ public class TokenService {
     public String createAccessToken(LoginUser loginUser, String nickname, String browser, String os) {
         var authorization = authorizationProvider.getAuthorization(loginUser.userId());
         var uuid = UUID.randomUUID().toString();
-        var sessionId = this.sessionId(uuid);
+        var sessionId = TokenService.hashAccessToken(uuid);
         var accessExpire = authProperties.getToken().getAccessExpire();
 
-        // 写入 Token 主体 Hash
-        var tokenKey = AuthCacheConstants.TOKEN_KEY_PREFIX + uuid;
+        // 写入会话 Hash
+        var sessionKey = AuthCacheConstants.SESSION_KEY_PREFIX + sessionId;
         Map<String, Object> fields = new HashMap<>();
         fields.put(AuthCacheConstants.FIELD_USER_ID, loginUser.userId());
         fields.put(AuthCacheConstants.FIELD_USERNAME, loginUser.username());
@@ -64,64 +63,37 @@ public class TokenService {
         fields.put(AuthCacheConstants.FIELD_LOGIN_IP, loginUser.loginIp());
         fields.put(AuthCacheConstants.FIELD_BROWSER, browser != null ? browser : "Unknown");
         fields.put(AuthCacheConstants.FIELD_OS, os != null ? os : "Unknown");
-        fields.put(AuthCacheConstants.FIELD_SESSION_ID, sessionId);
         // 使用生产序列化器支持的集合，读取时再转为不可变快照。
         fields.put(AuthCacheConstants.FIELD_ROLES, new LinkedHashSet<>(authorization.roles()));
         fields.put(AuthCacheConstants.FIELD_PERMISSIONS, new LinkedHashSet<>(authorization.permissions()));
-        var created = Map.of(loginUser.userId(), Set.of(uuid));
+        var created = Map.of(loginUser.userId(), Set.of(sessionId));
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCompletion(int status) {
                     if (status != STATUS_COMMITTED) {
-                        TokenService.this.revokeCapturedTokens(created, false);
+                        TokenService.this.revokeCapturedSessions(created, false);
                     }
                 }
             });
         }
         try {
-            valkeyUtils.hSetAll(tokenKey, fields);
-            valkeyUtils.expire(tokenKey, accessExpire, TimeUnit.MINUTES);
-            valkeyUtils.set(AuthCacheConstants.SESSION_KEY_PREFIX + sessionId, uuid,
-                    TimeUnit.MINUTES.toSeconds(accessExpire));
+            valkeyUtils.hSetAll(sessionKey, fields);
+            valkeyUtils.expire(sessionKey, accessExpire, TimeUnit.MINUTES);
 
-            // 添加到用户 Token 索引 Set
-            var userTokensKey = AuthCacheConstants.USER_TOKENS_KEY_PREFIX + loginUser.userId();
-            valkeyUtils.sAdd(userTokensKey, uuid);
-            valkeyUtils.expire(userTokensKey, authProperties.getToken().getRefreshExpire(), TimeUnit.DAYS);
+            // 添加到用户会话索引 Set
+            var userSessionsKey = AuthCacheConstants.USER_SESSIONS_KEY_PREFIX + loginUser.userId();
+            valkeyUtils.sAdd(userSessionsKey, sessionId);
+            valkeyUtils.expire(userSessionsKey, authProperties.getToken().getRefreshExpire(), TimeUnit.DAYS);
         } catch (RuntimeException failure) {
-            this.revokeCapturedTokens(created, false);
+            this.revokeCapturedSessions(created, false);
             throw new BusinessException("会话签发失败，请重新登录");
         }
         log.debug("创建 Access Token: userId={}", loginUser.userId());
         return uuid;
     }
 
-    /**
-     * 为缺少会话标识的旧 Token 补充管理索引，过期时间不超过原令牌剩余寿命。
-     * <p>仅用于管理端展示和踢除旧会话及其 Refresh Token；缺少授权快照的 Token 仍无法通过认证。
-     */
-    public String registerSession(String accessToken) {
-        var remainingSeconds = valkeyUtils.getExpire(AuthCacheConstants.TOKEN_KEY_PREFIX + accessToken);
-        if (remainingSeconds == null || remainingSeconds <= 0) {
-            return null;
-        }
-        var sessionId = this.sessionId(accessToken);
-        valkeyUtils.set(AuthCacheConstants.SESSION_KEY_PREFIX + sessionId, accessToken, remainingSeconds);
-        return sessionId;
-    }
-
-    /**
-     * 只允许管理标识查找会话，不接受原始 Access Token 作为管理标识。
-     */
-    public String getAccessTokenBySessionId(String sessionId) {
-        if (sessionId == null || !sessionId.matches("[0-9a-f]{64}")) {
-            return null;
-        }
-        return valkeyUtils.get(AuthCacheConstants.SESSION_KEY_PREFIX + sessionId, String.class);
-    }
-
-    private String sessionId(String accessToken) {
+    public static String hashAccessToken(String accessToken) {
         try {
             var digest = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(digest.digest(accessToken.getBytes(StandardCharsets.UTF_8)));
@@ -131,14 +103,15 @@ public class TokenService {
     }
 
     /**
-     * 一次 HGETALL 同时读取身份及授权快照；缺失快照的旧 Token 无效。
+     * 对凭据求摘要后，一次 HGETALL 同时读取身份及授权快照。
      *
-     * @param uuid Access Token UUID
+     * @param accessToken Access Token UUID
      * @return 完整认证对象，Token 无效时返回 null
      */
-    public TokenAuthentication validateSession(String uuid) {
-        var tokenKey = AuthCacheConstants.TOKEN_KEY_PREFIX + uuid;
-        var fields = valkeyUtils.hGetAll(tokenKey);
+    public TokenAuthentication validateSession(String accessToken) {
+        var sessionId = TokenService.hashAccessToken(accessToken);
+        var sessionKey = AuthCacheConstants.SESSION_KEY_PREFIX + sessionId;
+        var fields = valkeyUtils.hGetAll(sessionKey);
         if (fields == null || fields.isEmpty()) {
             return null;
         }
@@ -166,17 +139,17 @@ public class TokenService {
         var authorities = authorization.roles().stream()
                 .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
                 .toList();
-        return new TokenAuthentication(uuid, loginUser, authorities, authorization);
+        return new TokenAuthentication(sessionId, loginUser, authorities, authorization);
     }
 
-    /** 捕获用户现有 Token；此处不读取或加载授权。 */
-    public Map<Long, Set<String>> captureUserTokens(Collection<Long> userIds) {
+    /** 捕获用户现有会话标识；此处不读取或加载授权。 */
+    public Map<Long, Set<String>> captureUserSessions(Collection<Long> userIds) {
         Map<Long, Set<String>> captured = new TreeMap<>();
         for (var userId : userIds) {
-            var members = valkeyUtils.sMembers(AuthCacheConstants.USER_TOKENS_KEY_PREFIX + userId);
-            var tokens = members == null ? Set.<String>of() : members.stream()
+            var members = valkeyUtils.sMembers(AuthCacheConstants.USER_SESSIONS_KEY_PREFIX + userId);
+            var sessions = members == null ? Set.<String>of() : members.stream()
                     .map(Object::toString).collect(java.util.stream.Collectors.toUnmodifiableSet());
-            captured.put(userId, tokens);
+            captured.put(userId, sessions);
         }
         return Collections.unmodifiableMap(captured);
     }
@@ -190,24 +163,23 @@ public class TokenService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                TokenService.this.revokeCapturedTokens(captured, true);
+                TokenService.this.revokeCapturedSessions(captured, true);
             }
         });
     }
 
-    /** 删除捕获的 Hash、管理索引和集合成员，绝不删除整个用户索引。 */
-    private void revokeCapturedTokens(Map<Long, Set<String>> captured, boolean databaseCommitted) {
+    /** 删除捕获的会话 Hash 和集合成员，保留并发签发的新会话。 */
+    private void revokeCapturedSessions(Map<Long, Set<String>> captured, boolean databaseCommitted) {
         try {
             var keys = captured.values().stream().flatMap(Collection::stream)
-                    .flatMap(token -> Stream.of(AuthCacheConstants.TOKEN_KEY_PREFIX + token,
-                            AuthCacheConstants.SESSION_KEY_PREFIX + TokenService.this.sessionId(token)))
+                    .map(sessionId -> AuthCacheConstants.SESSION_KEY_PREFIX + sessionId)
                     .toList();
             if (!keys.isEmpty()) {
                 valkeyUtils.delete(keys);
             }
-            captured.forEach((userId, tokens) -> {
-                if (!tokens.isEmpty()) {
-                    valkeyUtils.sRemove(AuthCacheConstants.USER_TOKENS_KEY_PREFIX + userId, tokens.toArray());
+            captured.forEach((userId, sessions) -> {
+                if (!sessions.isEmpty()) {
+                    valkeyUtils.sRemove(AuthCacheConstants.USER_SESSIONS_KEY_PREFIX + userId, sessions.toArray());
                 }
             });
         } catch (RuntimeException failure) {
@@ -229,8 +201,7 @@ public class TokenService {
     public UserAuthorization getAuthorization(Long userId) {
         var authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication instanceof TokenAuthentication tokenAuthentication
-                && tokenAuthentication.getLoginUser().userId().equals(userId)
-                && tokenAuthentication.getAuthorization() != null) {
+                && tokenAuthentication.getLoginUser().userId().equals(userId)) {
             return tokenAuthentication.getAuthorization();
         }
         throw new BusinessException(ResultCode.UNAUTHORIZED, "会话缺少授权快照，请重新登录");

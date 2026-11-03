@@ -32,12 +32,6 @@ public class AccessLogFilter extends OncePerRequestFilter {
                                     @NonNull FilterChain filterChain) throws ServletException, IOException {
         var method = request.getMethod();
         var path = request.getRequestURI();
-        // 兼容仍持有旧在线列表的客户端，防止旧版凭据被放入踢下线路径后进入日志。
-        if (path.startsWith("/api/sys/online/")
-                && !path.substring("/api/sys/online/".length()).contains("/")
-                && !path.equals("/api/sys/online/list")) {
-            path = "/api/sys/online/{tokenId}";
-        }
         log.info("--> {} {}", method, path);
 
         long startTime = System.nanoTime();

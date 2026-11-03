@@ -38,9 +38,9 @@ public class RefreshToken implements Serializable {
     private Long userId;
 
     /**
-     * 关联的 Access Token UUID
+     * 关联的会话摘要
      */
-    private String accessToken;
+    private String sessionId;
 
     /**
      * 过期时间

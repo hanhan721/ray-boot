@@ -21,9 +21,9 @@ public interface OnlineUserService {
     /**
      * 强制下线（单个会话）
      *
-     * @param tokenId 在线列表返回的管理会话标识（非认证凭据）
+     * @param sessionId 在线列表返回的管理会话标识（非认证凭据）
      */
-    void kickByToken(String tokenId);
+    void kickBySessionId(String sessionId);
 
     /**
      * 强制下线（用户所有会话）

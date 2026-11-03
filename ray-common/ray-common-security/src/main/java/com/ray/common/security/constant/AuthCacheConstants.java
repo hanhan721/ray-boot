@@ -9,27 +9,16 @@ public final class AuthCacheConstants {
     }
 
     /**
-     * Access Token 主体 (Hash)
-     * <p>格式: token:{uuid}
-     * <p>Fields: userId, username, roles, permissions, loginTime, loginIp
-     */
-    public static final String TOKEN_KEY_PREFIX = "token:";
-
-    /**
-     * 管理会话索引 (String)：session:{SHA-256(Access Token)} -> Access Token。
-     * 与关联 Access Token 同时过期；对外仅暴露摘要，不能作为认证凭据。
+     * 会话主体 (Hash)：session:{SHA-256(Access Token)}。
+     * 保存身份及授权快照，摘要同时用作管理会话标识。
      */
     public static final String SESSION_KEY_PREFIX = "session:";
 
-    /**
-     * 用户 Token 索引 (Set)
-     * <p>格式: user_tokens:{userId}
-     * <p>Members: Access Token UUID 集合
-     */
-    public static final String USER_TOKENS_KEY_PREFIX = "user_tokens:";
+    /** 用户会话索引 (Set)：user_sessions:{userId} -> sessionId 集合。 */
+    public static final String USER_SESSIONS_KEY_PREFIX = "user_sessions:";
 
     /**
-     * 登录失败计数 (String)
+     * 登录失败状态 (Hash)：count、blockedUntil
      * <p>格式: login_fail:{username}
      */
     public static final String LOGIN_FAIL_KEY_PREFIX = "login_fail:";
@@ -45,5 +34,4 @@ public final class AuthCacheConstants {
     public static final String FIELD_LOGIN_IP = "loginIp";
     public static final String FIELD_BROWSER = "browser";
     public static final String FIELD_OS = "os";
-    public static final String FIELD_SESSION_ID = "sessionId";
 }

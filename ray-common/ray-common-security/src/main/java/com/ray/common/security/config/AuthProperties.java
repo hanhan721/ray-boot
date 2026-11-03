@@ -1,8 +1,11 @@
 package com.ray.common.security.config;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
+import org.springframework.validation.annotation.Validated;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -11,12 +14,14 @@ import java.util.Set;
  * 认证配置属性
  */
 @Data
+@Validated
 @Component
 @ConfigurationProperties(prefix = "ray.auth")
 public class AuthProperties {
 
     private TokenProperties token = new TokenProperties();
 
+    @Valid
     private SecurityProperties security = new SecurityProperties();
 
     private SuperAdminProperties superAdmin = new SuperAdminProperties();
@@ -49,15 +54,21 @@ public class AuthProperties {
     @Data
     public static class SecurityProperties {
 
-        /**
-         * 登录失败锁定次数
-         */
+        /** 开始冷却的账号累计失败次数。 */
+        @Min(1)
         private int maxLoginAttempts = 5;
 
-        /**
-         * 登录失败锁定时间（分钟）
-         */
-        private int lockDuration = 30;
+        /** 失败次数累计窗口（分钟），后续失败不延长窗口。 */
+        @Min(1)
+        private int failureWindowMinutes = 30;
+
+        /** 达到阈值时的初始冷却时间（秒）。 */
+        @Min(1)
+        private int initialCooldownSeconds = 1;
+
+        /** 指数退避的冷却上限（秒）。 */
+        @Min(1)
+        private int maxCooldownSeconds = 30;
     }
 
     /**

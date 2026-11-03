@@ -5,11 +5,9 @@ import com.ray.common.core.exception.BusinessException;
 import com.ray.common.core.util.IpUtils;
 import com.ray.common.core.util.UserAgentUtils;
 import com.ray.common.security.config.AuthProperties;
-import com.ray.common.security.constant.AuthCacheConstants;
 import com.ray.common.security.domain.LoginUser;
 import com.ray.common.security.service.TokenService;
 import com.ray.common.security.util.SecurityUtils;
-import com.ray.common.valkey.util.ValkeyUtils;
 import com.ray.system.api.domain.LoginRequest;
 import com.ray.system.api.domain.LoginVO;
 import com.ray.system.api.domain.RefreshVO;
@@ -35,7 +33,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 /**
@@ -54,7 +51,7 @@ public class AuthServiceImpl implements AuthService {
     private final TokenService tokenService;
     private final PasswordEncoder passwordEncoder;
     private final AuthProperties authProperties;
-    private final ValkeyUtils valkeyUtils;
+    private final LoginAttemptService loginAttemptService;
     private final ApplicationEventPublisher eventPublisher;
     private final PermissionService permissionService;
     private final AuthorizationSessionCoordinator sessionCoordinator;
@@ -66,7 +63,7 @@ public class AuthServiceImpl implements AuthService {
         var clientIp = this.getClientIp(httpRequest);
 
         // 1. 检查登录失败次数
-        this.checkLoginAttempts(username, clientIp);
+        loginAttemptService.checkAllowed(username);
 
         // 2. 查询用户
         var userAgent = httpRequest.getHeader("User-Agent");
@@ -75,7 +72,7 @@ public class AuthServiceImpl implements AuthService {
         var passwordHash = user != null ? user.getPassword() : DUMMY_PASSWORD_HASH;
         var passwordMatches = passwordEncoder.matches(request.password(), passwordHash);
         if (user == null || !passwordMatches) {
-            this.recordLoginFail(username, clientIp);
+            loginAttemptService.recordFailure(username);
             this.publishLoginLog(username, clientIp, userAgent, false, "用户名或密码错误");
             throw new BusinessException(ResultCode.UNAUTHORIZED, "用户名或密码错误");
         }
@@ -86,7 +83,7 @@ public class AuthServiceImpl implements AuthService {
         user = userService.getByIdForUpdate(user.getId());
         if (user == null || !Boolean.TRUE.equals(user.getEnabled())
                 || !Objects.equals(passwordHash, user.getPassword())) {
-            this.recordLoginFail(username, clientIp);
+            loginAttemptService.recordFailure(username);
             this.publishLoginLog(username, clientIp, userAgent, false, "账号不存在、已被禁用或凭据已变更");
             throw new BusinessException(ResultCode.UNAUTHORIZED, "用户名或密码错误");
         }
@@ -97,28 +94,24 @@ public class AuthServiceImpl implements AuthService {
         var os = UserAgentUtils.parseOs(userAgent);
         var accessToken = tokenService.createAccessToken(loginUser, user.getNickname(), browser, os);
 
-        // 5. 支持多设备并发登录，不再清除旧 Refresh Token
-        // 如需恢复单设备登录策略，取消下行注释即可
-        // refreshTokenService.deleteByUserId(user.getId());
-
-        // 6. 生成新的 Refresh Token
+        // 5. 生成新的 Refresh Token
         var rawRefreshToken = UUID.randomUUID().toString();
-        refreshTokenService.create(rawRefreshToken, user.getId(), accessToken, userAgent, clientIp);
+        refreshTokenService.create(rawRefreshToken, user.getId(), TokenService.hashAccessToken(accessToken), userAgent, clientIp);
 
-        // 7. 设置新的 Refresh Token Cookie
+        // 6. 设置新的 Refresh Token Cookie
         this.setRefreshTokenCookie(httpRequest, httpResponse, rawRefreshToken);
 
-        // 8. 清除登录失败计数
-        this.clearLoginFail(username, clientIp);
+        // 7. 清除登录失败计数
+        loginAttemptService.clearFailures(username);
 
-        // 9. 更新最后登录信息
+        // 8. 更新最后登录信息
         user.setLastLoginTime(LocalDateTime.now())
                 .setLastLoginIp(clientIp);
         userService.updateById(user);
 
         log.info("用户登录成功: username={}, ip={}", username, clientIp);
 
-        // 10. 记录登录日志
+        // 9. 记录登录日志
         this.publishLoginLog(username, clientIp, userAgent, true, "登录成功");
 
         var expireIn = (long) authProperties.getToken().getAccessExpire() * 60;
@@ -157,7 +150,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // 4. 删除旧 Access Token
-        tokenService.revokeAfterCommit(Map.of(user.getId(), Set.of(refreshToken.getAccessToken())));
+        tokenService.revokeAfterCommit(Map.of(user.getId(), Set.of(refreshToken.getSessionId())));
 
         // 5. 删除旧 Refresh Token
         refreshTokenService.deleteByTokenHash(refreshToken.getTokenHash());
@@ -171,7 +164,7 @@ public class AuthServiceImpl implements AuthService {
 
         // 7. 生成新 Refresh Token (Rotation)
         var newRawRefreshToken = UUID.randomUUID().toString();
-        refreshTokenService.create(newRawRefreshToken, user.getId(), newAccessToken, userAgent, clientIp);
+        refreshTokenService.create(newRawRefreshToken, user.getId(), TokenService.hashAccessToken(newAccessToken), userAgent, clientIp);
 
         // 8. 设置新 Refresh Token Cookie
         this.setRefreshTokenCookie(httpRequest, httpResponse, newRawRefreshToken);
@@ -187,7 +180,7 @@ public class AuthServiceImpl implements AuthService {
     public void logout(HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         sessionCoordinator.lockForIssuance();
         var loginUser = SecurityUtils.getLoginUser();
-        var accessToken = SecurityUtils.getAccessToken();
+        var sessionId = SecurityUtils.getSessionId();
         var rawRefreshToken = this.extractRefreshToken(httpRequest);
         var refreshToken = rawRefreshToken != null && !rawRefreshToken.isBlank()
                 ? refreshTokenService.verify(rawRefreshToken) : null;
@@ -200,11 +193,11 @@ public class AuthServiceImpl implements AuthService {
                 .sorted()
                 .forEach(userService::getByIdForUpdate);
 
-        if (loginUser != null && accessToken != null) {
+        if (loginUser != null && sessionId != null) {
             // 删除当前 Access Token
-            tokenService.revokeAfterCommit(Map.of(loginUser.userId(), Set.of(accessToken)));
+            tokenService.revokeAfterCommit(Map.of(loginUser.userId(), Set.of(sessionId)));
             // 删除与当前 Access Token 绑定的 Refresh Token，防止登出后仍可续期
-            refreshTokenService.deleteByAccessToken(accessToken);
+            refreshTokenService.deleteBySessionId(sessionId);
 
             // 记录登出日志
             var clientIp = this.getClientIp(httpRequest);
@@ -218,7 +211,7 @@ public class AuthServiceImpl implements AuthService {
         if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
             var verified = refreshTokenService.verify(rawRefreshToken);
             if (verified != null) {
-                tokenService.revokeAfterCommit(Map.of(verified.getUserId(), Set.of(verified.getAccessToken())));
+                tokenService.revokeAfterCommit(Map.of(verified.getUserId(), Set.of(verified.getSessionId())));
                 refreshTokenService.deleteByTokenHash(verified.getTokenHash());
             }
         }
@@ -261,33 +254,6 @@ public class AuthServiceImpl implements AuthService {
         sessionCoordinator.lockForChange();
         sessionCoordinator.revokeUsers(Set.of(userId));
         log.info("踢掉用户所有设备: userId={}", userId);
-    }
-
-    // ==================== 登录失败限制 ====================
-
-    private void checkLoginAttempts(String username, String clientIp) {
-        var key = this.loginFailKey(username, clientIp);
-        var attempts = valkeyUtils.get(key, Number.class);
-
-        if (attempts != null && attempts.longValue() >= authProperties.getSecurity().getMaxLoginAttempts()) {
-            var ttl = valkeyUtils.getExpire(key);
-            var minutes = ttl != null ? (ttl / 60 + 1) : authProperties.getSecurity().getLockDuration();
-            throw new BusinessException(ResultCode.UNAUTHORIZED, "登录失败次数过多，请" + minutes + "分钟后重试");
-        }
-    }
-
-    private void recordLoginFail(String username, String clientIp) {
-        valkeyUtils.incrementWithExpire(this.loginFailKey(username, clientIp),
-                authProperties.getSecurity().getLockDuration(), TimeUnit.MINUTES);
-    }
-
-    private void clearLoginFail(String username, String clientIp) {
-        valkeyUtils.delete(this.loginFailKey(username, clientIp));
-    }
-
-    private String loginFailKey(String username, String clientIp) {
-        // 独立命名空间使升级前的账号级锁定不再影响其他来源；长度前缀避免分隔符碰撞。
-        return AuthCacheConstants.LOGIN_FAIL_KEY_PREFIX + "v2:" + username.length() + ":" + username + ":" + clientIp;
     }
 
     // ==================== 登录日志 ====================

@@ -13,11 +13,11 @@ public interface RefreshTokenService extends IService<RefreshToken> {
      *
      * @param rawToken    原始 Token（UUID）
      * @param userId      用户 ID
-     * @param accessToken 关联的 Access Token UUID
+     * @param sessionId   关联的会话摘要
      * @param userAgent   设备信息
      * @param ip          登录 IP
      */
-    void create(String rawToken, Long userId, String accessToken, String userAgent, String ip);
+    void create(String rawToken, Long userId, String sessionId, String userAgent, String ip);
 
     /**
      * 验证 Refresh Token
@@ -42,11 +42,11 @@ public interface RefreshTokenService extends IService<RefreshToken> {
     void deleteByUserId(Long userId);
 
     /**
-     * 删除指定 Access Token 关联的 Refresh Token（登出时清理会话残留）
+     * 删除指定会话关联的 Refresh Token（登出时清理会话残留）
      *
-     * @param accessToken Access Token UUID
+     * @param sessionId 会话摘要
      */
-    void deleteByAccessToken(String accessToken);
+    void deleteBySessionId(String sessionId);
 
     /**
      * 清理过期的 Refresh Token 记录

@@ -27,14 +27,14 @@ public class RefreshTokenServiceImpl extends ServiceImpl<RefreshTokenMapper, Ref
     private final AuthProperties authProperties;
 
     @Override
-    public void create(String rawToken, Long userId, String accessToken, String userAgent, String ip) {
+    public void create(String rawToken, Long userId, String sessionId, String userAgent, String ip) {
         var tokenHash = this.hashToken(rawToken);
         var expireTime = LocalDateTime.now().plusDays(authProperties.getToken().getRefreshExpire());
 
         var refreshToken = new RefreshToken()
                 .setTokenHash(tokenHash)
                 .setUserId(userId)
-                .setAccessToken(accessToken)
+                .setSessionId(sessionId)
                 .setExpireTime(expireTime)
                 .setUserAgent(userAgent)
                 .setIp(ip);
@@ -81,13 +81,13 @@ public class RefreshTokenServiceImpl extends ServiceImpl<RefreshTokenMapper, Ref
     }
 
     @Override
-    public void deleteByAccessToken(String accessToken) {
-        if (accessToken == null || accessToken.isBlank()) {
+    public void deleteBySessionId(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
             return;
         }
         super.remove(
                 Wrappers.<RefreshToken>lambdaQuery()
-                        .eq(RefreshToken::getAccessToken, accessToken)
+                        .eq(RefreshToken::getSessionId, sessionId)
         );
     }
 

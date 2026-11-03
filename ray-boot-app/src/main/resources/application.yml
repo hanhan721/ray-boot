@@ -63,8 +63,10 @@ ray:
       refresh-expire: 7       # Refresh Token 过期时间（天）
       refresh-salt: "${RAY_AUTH_REFRESH_SALT}"
     security:
-      max-login-attempts: 5   # 同一账号、同一来源 IP 的登录失败锁定次数
-      lock-duration: 30       # 登录失败锁定时间（分钟）
+      max-login-attempts: 5       # 账号累计失败达到阈值后开始冷却
+      failure-window-minutes: 30 # 失败次数累计窗口，不随失败延长
+      initial-cooldown-seconds: 1
+      max-cooldown-seconds: 30
     super-admin:
       role-codes:             # 超管角色代码集合，拥有最高权限
         - admin                # 可配置多个超管角色

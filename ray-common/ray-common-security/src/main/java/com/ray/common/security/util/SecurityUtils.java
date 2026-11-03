@@ -48,14 +48,14 @@ public final class SecurityUtils {
     }
 
     /**
-     * 获取当前请求的 Access Token
+     * 获取当前请求的会话标识
      *
-     * @return Access Token UUID，未登录返回 null
+     * @return 会话摘要，未登录返回 null
      */
-    public static String getAccessToken() {
+    public static String getSessionId() {
         var authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication instanceof TokenAuthentication tokenAuth) {
-            return tokenAuth.getAccessToken();
+            return tokenAuth.getSessionId();
         }
         return null;
     }

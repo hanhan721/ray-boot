@@ -6,6 +6,7 @@ import com.ray.system.service.OnlineUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -33,10 +34,10 @@ public class OnlineUserController {
     }
 
     @Operation(summary = "强制下线（单个会话）")
-    @DeleteMapping("/{tokenId}")
+    @DeleteMapping("/{sessionId}")
     @PreAuthorize("@perm.has('system:online:kick')")
-    public R<Void> kickByToken(@PathVariable String tokenId) {
-        onlineUserService.kickByToken(tokenId);
+    public R<Void> kickBySessionId(@PathVariable @Pattern(regexp = "[0-9a-f]{64}", message = "会话标识格式无效") String sessionId) {
+        onlineUserService.kickBySessionId(sessionId);
         return R.ok();
     }
 

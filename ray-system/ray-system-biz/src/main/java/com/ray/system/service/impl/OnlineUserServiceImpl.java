@@ -39,31 +39,26 @@ public class OnlineUserServiceImpl implements OnlineUserService {
 
     @Override
     public List<OnlineUserVO> list(String username, String loginIp) {
-        // 1. 扫描尚未过期的 Token Hash，包含供管理员踢除的旧会话。
-        var tokenKeys = valkeyUtils.scan(AuthCacheConstants.TOKEN_KEY_PREFIX + "*", 200);
-        if (CollectionUtils.isEmpty(tokenKeys)) {
+        // 1. 扫描尚未过期的会话 Hash。
+        var sessionKeys = valkeyUtils.scan(AuthCacheConstants.SESSION_KEY_PREFIX + "*", 200);
+        if (CollectionUtils.isEmpty(sessionKeys)) {
             return List.of();
         }
 
-        // 2. Pipeline 批量 HGETALL，一次网络往返获取所有 token 详情
-        var keyList = tokenKeys.stream().sorted().toList();
+        // 2. Pipeline 批量 HGETALL，一次网络往返获取所有会话详情
+        var keyList = sessionKeys.stream().sorted().toList();
         var fieldsList = valkeyUtils.pipelinedHGetAll(keyList);
 
         // 3. 组装 VO 并筛选
-        var prefixLen = AuthCacheConstants.TOKEN_KEY_PREFIX.length();
+        var prefixLen = AuthCacheConstants.SESSION_KEY_PREFIX.length();
         return IntStream.range(0, keyList.size())
                 .mapToObj(i -> {
                     var fields = fieldsList.get(i);
                     if (CollectionUtils.isEmpty(fields)) {
                         return null;
                     }
-                    var uuid = keyList.get(i).substring(prefixLen);
-                    var sessionId = (String) fields.get(AuthCacheConstants.FIELD_SESSION_ID);
-                    if (!StringUtils.hasText(sessionId)) {
-                        // 补充旧会话的管理索引，不恢复其认证能力。
-                        sessionId = tokenService.registerSession(uuid);
-                    }
-                    return sessionId != null ? this.buildOnlineUserVO(sessionId, fields) : null;
+                    var sessionId = keyList.get(i).substring(prefixLen);
+                    return this.buildOnlineUserVO(sessionId, fields);
                 })
                 .filter(Objects::nonNull)
                 .filter(vo -> !StringUtils.hasText(username)
@@ -76,23 +71,20 @@ public class OnlineUserServiceImpl implements OnlineUserService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void kickByToken(String tokenId) {
+    public void kickBySessionId(String sessionId) {
         sessionCoordinator.lockForChange();
-        var accessToken = tokenService.getAccessTokenBySessionId(tokenId);
-        if (accessToken == null) {
-            return;
-        }
-        var tokenKey = AuthCacheConstants.TOKEN_KEY_PREFIX + accessToken;
-        var fields = valkeyUtils.hGetAll(tokenKey);
+        var sessionKey = AuthCacheConstants.SESSION_KEY_PREFIX + sessionId;
+        var fields = valkeyUtils.hGetAll(sessionKey);
 
         if (!CollectionUtils.isEmpty(fields)) {
             var userId = ((Number) fields.get(AuthCacheConstants.FIELD_USER_ID)).longValue();
             // 与续期共用用户行锁，使等待中的刷新在提交后重新验证到失效状态。
             userService.getByIdForUpdate(userId);
-            refreshTokenService.deleteByAccessToken(accessToken);
-            tokenService.revokeAfterCommit(Map.of(userId, Set.of(accessToken)));
+            tokenService.revokeAfterCommit(Map.of(userId, Set.of(sessionId)));
             log.info("强制下线单个会话: userId={}", userId);
         }
+        // 协调锁阻止并发续期；Access 已过期时仍须撤销对应 Refresh Token。
+        refreshTokenService.deleteBySessionId(sessionId);
     }
 
     @Override

@@ -53,16 +53,14 @@ public class FileController {
     @Operation(summary = "下载文件")
     @GetMapping("/download")
     @PreAuthorize("@perm.has('system:file:download')")
-    public void download(@RequestParam(required = false) String bucket,
-                         @RequestParam String filePath,
+    public void download(@RequestParam String filePath,
                          HttpServletResponse response) {
-        fileService.download(bucket, filePath, response);
+        fileService.download(filePath, response);
     }
 
     @Operation(summary = "签名直链访问（LOCAL）")
     @GetMapping("/access")
-    public void access(@RequestParam(required = false) String bucket,
-                       @RequestParam("path") String filePath,
+    public void access(@RequestParam("path") String filePath,
                        @RequestParam("exp") long expiresAt,
                        @RequestParam(value = "level", defaultValue = "LOCAL") String level,
                        @RequestParam("sig") String signature,
@@ -77,7 +75,7 @@ public class FileController {
             throw new BusinessException("无效的访问签名");
         }
 
-        fileService.access(bucket, filePath, response);
+        fileService.access(filePath, response);
     }
 
     @Operation(summary = "查询详情")

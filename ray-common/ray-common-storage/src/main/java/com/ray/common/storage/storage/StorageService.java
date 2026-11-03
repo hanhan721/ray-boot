@@ -18,7 +18,7 @@ public interface StorageService {
      *
      * @param inputStream 文件输入流
      * @param filePath    存储路径（相对路径）
-     * @param contentType   MIME 类型
+     * @param contentType   在统一上传入口按内容检测得到的可信 MIME 类型
      * @param contentLength 文件大小（字节）
      */
     void upload(InputStream inputStream, String filePath, String contentType, long contentLength);

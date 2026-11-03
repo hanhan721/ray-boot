@@ -22,9 +22,7 @@ import java.util.Map;
  */
 public class StorageFileSerializer extends StdScalarSerializer<String> {
 
-    private static final String URL_CACHE_PREFIX = "storage:url:v2:";
     private static final String NAME_CACHE_PREFIX = "storage:name:";
-    private static final Duration URL_CACHE_MARGIN = Duration.ofMinutes(1);
     private static final Duration NAME_CACHE_TTL = Duration.ofDays(7);
 
     private final StorageService storageService;
@@ -118,25 +116,7 @@ public class StorageFileSerializer extends StdScalarSerializer<String> {
         if (storageService == null) {
             return key;
         }
-        String bucket = storageService.getBucket();
-        String cacheKey = URL_CACHE_PREFIX + level.name() + ":" + (bucket == null ? "_" : bucket) + ":" + key;
-
-        if (valkeyUtils != null) {
-            String cached = valkeyUtils.get(cacheKey, String.class);
-            if (cached != null) {
-                return cached;
-            }
-        }
-
-        String url = storageService.getAccessUrl(bucket, key, level.getDuration());
-
-        if (valkeyUtils != null) {
-            long ttl = level.getDuration().minus(URL_CACHE_MARGIN).getSeconds();
-            if (ttl > 0) {
-                valkeyUtils.set(cacheKey, url, ttl);
-            }
-        }
-        return url;
+        return storageService.getAccessUrl(storageService.getBucket(), key, level.getDuration());
     }
 
     private String doResolveName(String key) {

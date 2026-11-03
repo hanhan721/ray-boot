@@ -94,7 +94,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, SysFile> implements
     }
 
     @Override
-    public void download(String bucket, String filePath, HttpServletResponse response) {
+    public void download(String filePath, HttpServletResponse response) {
         var sysFile = super.getOne(
                 Wrappers.<SysFile>lambdaQuery().eq(SysFile::getFilePath, filePath)
         );
@@ -117,7 +117,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, SysFile> implements
     }
 
     @Override
-    public void access(String bucket, String filePath, HttpServletResponse response) {
+    public void access(String filePath, HttpServletResponse response) {
         var sysFile = super.getOne(
                 Wrappers.<SysFile>lambdaQuery().eq(SysFile::getFilePath, filePath)
         );
@@ -125,7 +125,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, SysFile> implements
 
         try (var inputStream = new BufferedInputStream(storageService.download(sysFile.getBucket(), filePath));
              var outputStream = response.getOutputStream()) {
-            var contentType = FileContentUtils.detectContentType(inputStream);
+            var contentType = sysFile.getContentType();
             response.setContentType(contentType);
             response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
                     FileContentUtils.contentDisposition(contentType, sysFile.getOriginalName()));
@@ -161,7 +161,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, SysFile> implements
     @Async
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deleteByFilePaths(String bucket, List<String> filePaths) {
+    public void deleteByFilePaths(List<String> filePaths) {
         if (CollectionUtils.isEmpty(filePaths)) {
             return;
         }

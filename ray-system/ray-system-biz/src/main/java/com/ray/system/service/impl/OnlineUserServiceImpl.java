@@ -1,8 +1,12 @@
 package com.ray.system.service.impl;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.ray.common.mybatis.util.PageUtils;
 import com.ray.common.security.constant.AuthCacheConstants;
+import com.ray.common.security.service.OnlineSessionIndex;
 import com.ray.common.security.service.TokenService;
 import com.ray.common.valkey.util.ValkeyUtils;
+import com.ray.system.api.domain.OnlineUserPageQuery;
 import com.ray.system.api.domain.OnlineUserVO;
 import com.ray.system.security.AuthorizationSessionCoordinator;
 import com.ray.system.service.OnlineUserService;
@@ -13,10 +17,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
-import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -31,42 +33,41 @@ import java.util.stream.IntStream;
 @RequiredArgsConstructor
 public class OnlineUserServiceImpl implements OnlineUserService {
 
+    private static final List<String> DISPLAY_FIELDS = List.of(AuthCacheConstants.FIELD_USER_ID,
+            AuthCacheConstants.FIELD_USERNAME, AuthCacheConstants.FIELD_NICKNAME, AuthCacheConstants.FIELD_LOGIN_IP,
+            AuthCacheConstants.FIELD_BROWSER, AuthCacheConstants.FIELD_OS, AuthCacheConstants.FIELD_LOGIN_TIME);
+
     private final ValkeyUtils valkeyUtils;
     private final TokenService tokenService;
     private final RefreshTokenService refreshTokenService;
     private final UserService userService;
     private final AuthorizationSessionCoordinator sessionCoordinator;
+    private final OnlineSessionIndex onlineSessionIndex;
 
     @Override
-    public List<OnlineUserVO> list(String username, String loginIp) {
-        // 1. 扫描尚未过期的会话 Hash。
-        var sessionKeys = valkeyUtils.scan(AuthCacheConstants.SESSION_KEY_PREFIX + "*", 200);
-        if (CollectionUtils.isEmpty(sessionKeys)) {
-            return List.of();
-        }
-
-        // 2. Pipeline 批量 HGETALL，一次网络往返获取所有会话详情
-        var keyList = sessionKeys.stream().sorted().toList();
-        var fieldsList = valkeyUtils.pipelinedHGetAll(keyList);
-
-        // 3. 组装 VO 并筛选
-        var prefixLen = AuthCacheConstants.SESSION_KEY_PREFIX.length();
-        return IntStream.range(0, keyList.size())
+    public IPage<OnlineUserVO> page(OnlineUserPageQuery query) {
+        var page = PageUtils.<OnlineUserVO>buildPage(query);
+        var indexed = onlineSessionIndex.page(query.getStartTime(), query.getEndTime(),
+                (page.getCurrent() - 1) * page.getSize(), query.getPageSize());
+        page.setTotal(indexed.total());
+        var sessionIds = indexed.sessionIds();
+        var fieldsList = valkeyUtils.pipelinedHMGet(sessionIds.stream()
+                .map(id -> AuthCacheConstants.SESSION_KEY_PREFIX + id).toList(), DISPLAY_FIELDS);
+        var stale = IntStream.range(0, sessionIds.size()).filter(i -> CollectionUtils.isEmpty(fieldsList.get(i)))
+                .mapToObj(sessionIds::get).toList();
+        onlineSessionIndex.remove(stale);
+        page.setTotal(Math.max(0, page.getTotal() - stale.size()));
+        page.setRecords(IntStream.range(0, sessionIds.size())
                 .mapToObj(i -> {
                     var fields = fieldsList.get(i);
                     if (CollectionUtils.isEmpty(fields)) {
                         return null;
                     }
-                    var sessionId = keyList.get(i).substring(prefixLen);
-                    return this.buildOnlineUserVO(sessionId, fields);
+                    return this.buildOnlineUserVO(sessionIds.get(i), fields);
                 })
                 .filter(Objects::nonNull)
-                .filter(vo -> !StringUtils.hasText(username)
-                        || vo.username().toLowerCase().contains(username.toLowerCase()))
-                .filter(vo -> !StringUtils.hasText(loginIp)
-                        || vo.loginIp().contains(loginIp))
-                .sorted(Comparator.comparing(OnlineUserVO::loginTime).reversed())
-                .toList();
+                .toList());
+        return page;
     }
 
     @Override

@@ -1,8 +1,8 @@
 package com.ray.system.service;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.ray.system.api.domain.OnlineUserPageQuery;
 import com.ray.system.api.domain.OnlineUserVO;
-
-import java.util.List;
 
 /**
  * 在线用户 Service
@@ -10,13 +10,9 @@ import java.util.List;
 public interface OnlineUserService {
 
     /**
-     * 查询在线用户列表
-     *
-     * @param username 用户名（模糊匹配，可为空）
-     * @param loginIp  登录 IP（模糊匹配，可为空）
-     * @return 在线用户列表
+     * 按登录时间倒序分页查询在线会话。
      */
-    List<OnlineUserVO> list(String username, String loginIp);
+    IPage<OnlineUserVO> page(OnlineUserPageQuery query);
 
     /**
      * 强制下线（单个会话）

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * Valkey 工具类
@@ -80,6 +81,24 @@ public class ValkeyUtils {
             }
         }
         return keys;
+    }
+
+    /** 维护任务分批处理扫描结果，避免把整个键空间保留在内存。 */
+    public void scanEach(String pattern, int batchSize, Consumer<List<String>> consumer) {
+        var options = ScanOptions.scanOptions().match(pattern).count(batchSize).build();
+        try (var cursor = redisTemplate.scan(options)) {
+            var batch = new ArrayList<String>(batchSize);
+            while (cursor.hasNext()) {
+                batch.add(cursor.next());
+                if (batch.size() == batchSize) {
+                    consumer.accept(List.copyOf(batch));
+                    batch.clear();
+                }
+            }
+            if (!batch.isEmpty()) {
+                consumer.accept(List.copyOf(batch));
+            }
+        }
     }
 
     // ==================== String 操作 ====================
@@ -188,6 +207,33 @@ public class ValkeyUtils {
         return results.stream()
                 .map(r -> r != null ? (Map<Object, Object>) r : Map.of())
                 .toList();
+    }
+
+    /** 批量读取指定 Hash 字段，不读取无关的授权快照。 */
+    @SuppressWarnings("unchecked")
+    public List<Map<Object, Object>> pipelinedHMGet(Collection<String> keys, List<String> fields) {
+        if (keys.isEmpty()) {
+            return List.of();
+        }
+        var results = redisTemplate.executePipelined(new SessionCallback<>() {
+            @Override
+            public <K, V> Object execute(@NonNull RedisOperations<K, V> operations) {
+                for (var key : keys) {
+                    operations.<String, Object>opsForHash().multiGet((K) key, fields);
+                }
+                return null;
+            }
+        });
+        return results.stream().map(result -> {
+            var values = (List<Object>) result;
+            Map<Object, Object> map = new HashMap<>();
+            for (int i = 0; i < fields.size(); i++) {
+                if (values.get(i) != null) {
+                    map.put(fields.get(i), values.get(i));
+                }
+            }
+            return map;
+        }).toList();
     }
 
     // ==================== Hash 操作 ====================

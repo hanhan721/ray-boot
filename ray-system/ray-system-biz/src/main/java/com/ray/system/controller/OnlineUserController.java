@@ -1,17 +1,17 @@
 package com.ray.system.controller;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.ray.common.core.domain.R;
+import com.ray.system.api.domain.OnlineUserPageQuery;
 import com.ray.system.api.domain.OnlineUserVO;
 import com.ray.system.service.OnlineUserService;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 /**
  * 在线用户管理
@@ -24,13 +24,11 @@ public class OnlineUserController {
 
     private final OnlineUserService onlineUserService;
 
-    @Operation(summary = "查询在线用户列表")
-    @GetMapping("/list")
+    @Operation(summary = "按登录时间倒序分页查询在线会话")
+    @GetMapping("/page")
     @PreAuthorize("@perm.has('system:online:list')")
-    public R<List<OnlineUserVO>> list(
-            @Parameter(description = "用户名") @RequestParam(required = false) String username,
-            @Parameter(description = "登录 IP") @RequestParam(required = false) String loginIp) {
-        return R.ok(onlineUserService.list(username, loginIp));
+    public R<IPage<OnlineUserVO>> page(@Valid OnlineUserPageQuery query) {
+        return R.ok(onlineUserService.page(query));
     }
 
     @Operation(summary = "强制下线（单个会话）")

@@ -37,6 +37,7 @@ public class TokenService {
     private final ValkeyUtils valkeyUtils;
     private final AuthProperties authProperties;
     private final UserAuthorizationProvider authorizationProvider;
+    private final OnlineSessionIndex onlineSessionIndex;
 
     /**
      * 创建 Access Token
@@ -86,6 +87,7 @@ public class TokenService {
         try {
             valkeyUtils.hSetAll(sessionKey, fields);
             valkeyUtils.expire(sessionKey, accessExpire, TimeUnit.MINUTES);
+            onlineSessionIndex.add(sessionId, loginUser.loginTime());
 
             // 添加到用户会话索引 Set
             var userSessionsKey = AuthCacheConstants.USER_SESSIONS_KEY_PREFIX + loginUser.userId();
@@ -186,6 +188,7 @@ public class TokenService {
                     .toList();
             if (!keys.isEmpty()) {
                 valkeyUtils.delete(keys);
+                onlineSessionIndex.remove(captured.values().stream().flatMap(Collection::stream).toList());
             }
             captured.forEach((userId, sessions) -> {
                 if (!sessions.isEmpty()) {

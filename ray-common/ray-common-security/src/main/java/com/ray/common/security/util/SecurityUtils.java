@@ -60,6 +60,12 @@ public final class SecurityUtils {
         return null;
     }
 
+    /** 获取一次登录的稳定标识，刷新前后保持不变。 */
+    public static String getLoginSessionId() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication instanceof TokenAuthentication tokenAuth ? tokenAuth.getLoginSessionId() : null;
+    }
+
     /**
      * 获取当前用户角色集合
      *

@@ -29,6 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -152,19 +154,20 @@ public class AuthServiceImpl implements AuthService {
         // 4. 删除旧 Access Token
         tokenService.revokeAfterCommit(Map.of(user.getId(), Set.of(refreshToken.getSessionId())));
 
-        // 5. 删除旧 Refresh Token
-        refreshTokenService.deleteByTokenHash(refreshToken.getTokenHash());
+        // 5. 旧凭据不再允许续期，保留映射以便并发登出撤销同一次登录。
+        refreshTokenService.markRotated(refreshToken.getTokenHash());
 
         // 6. 生成新 Access Token
         var clientIp = this.getClientIp(httpRequest);
         var userAgent = httpRequest.getHeader("User-Agent");
         var loginUser = new LoginUser(user.getId(), user.getUsername(), Set.of(), LocalDateTime.now(), clientIp);
         var newAccessToken = tokenService.createAccessToken(loginUser, user.getNickname(),
-                UserAgentUtils.parseBrowser(userAgent), UserAgentUtils.parseOs(userAgent));
+                UserAgentUtils.parseBrowser(userAgent), UserAgentUtils.parseOs(userAgent), refreshToken.getLoginSessionId());
 
         // 7. 生成新 Refresh Token (Rotation)
         var newRawRefreshToken = UUID.randomUUID().toString();
-        refreshTokenService.create(newRawRefreshToken, user.getId(), TokenService.hashAccessToken(newAccessToken), userAgent, clientIp);
+        refreshTokenService.create(newRawRefreshToken, user.getId(), TokenService.hashAccessToken(newAccessToken),
+                refreshToken.getLoginSessionId(), userAgent, clientIp);
 
         // 8. 设置新 Refresh Token Cookie
         this.setRefreshTokenCookie(httpRequest, httpResponse, newRawRefreshToken);
@@ -181,9 +184,10 @@ public class AuthServiceImpl implements AuthService {
         sessionCoordinator.lockForIssuance();
         var loginUser = SecurityUtils.getLoginUser();
         var sessionId = SecurityUtils.getSessionId();
+        var loginSessionId = SecurityUtils.getLoginSessionId();
         var rawRefreshToken = this.extractRefreshToken(httpRequest);
         var refreshToken = rawRefreshToken != null && !rawRefreshToken.isBlank()
-                ? refreshTokenService.verify(rawRefreshToken) : null;
+                ? refreshTokenService.findForLogout(rawRefreshToken) : null;
 
         // 与续期共用用户行锁；两个凭据属于不同用户时按固定顺序加锁，避免交叉登出死锁。
         Stream.of(loginUser != null ? loginUser.userId() : null,
@@ -193,11 +197,11 @@ public class AuthServiceImpl implements AuthService {
                 .sorted()
                 .forEach(userService::getByIdForUpdate);
 
-        if (loginUser != null && sessionId != null) {
-            // 删除当前 Access Token
-            tokenService.revokeAfterCommit(Map.of(loginUser.userId(), Set.of(sessionId)));
-            // 删除与当前 Access Token 绑定的 Refresh Token，防止登出后仍可续期
-            refreshTokenService.deleteBySessionId(sessionId);
+        Map<Long, Set<String>> captured = new HashMap<>();
+        if (loginUser != null && sessionId != null && loginSessionId != null) {
+            var sessions = captured.computeIfAbsent(loginUser.userId(), _ -> new HashSet<>());
+            sessions.add(sessionId);
+            sessions.addAll(refreshTokenService.revokeLoginSession(loginUser.userId(), loginSessionId));
 
             // 记录登出日志
             var clientIp = this.getClientIp(httpRequest);
@@ -207,13 +211,14 @@ public class AuthServiceImpl implements AuthService {
             log.info("用户退出登录: username={}", loginUser.username());
         }
 
-        // 兜底：如果请求中还带有 Refresh Token Cookie（例如 Access 已过期但 Refresh 仍有效），一并作废
-        if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
-            var verified = refreshTokenService.verify(rawRefreshToken);
-            if (verified != null) {
-                tokenService.revokeAfterCommit(Map.of(verified.getUserId(), Set.of(verified.getSessionId())));
-                refreshTokenService.deleteByTokenHash(verified.getTokenHash());
-            }
+        // 已轮换的 Cookie 仍能定位同一次登录；在用户行锁内撤销最新凭据。
+        if (refreshToken != null) {
+            var sessions = captured.computeIfAbsent(refreshToken.getUserId(), _ -> new HashSet<>());
+            sessions.add(refreshToken.getSessionId());
+            sessions.addAll(refreshTokenService.revokeLoginSession(refreshToken.getUserId(), refreshToken.getLoginSessionId()));
+        }
+        if (!captured.isEmpty()) {
+            tokenService.revokeAfterCommit(captured);
         }
 
         // 清除 Cookie，Path 与签发时一致。

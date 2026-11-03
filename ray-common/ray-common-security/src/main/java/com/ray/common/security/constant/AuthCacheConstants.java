@@ -26,6 +26,8 @@ public final class AuthCacheConstants {
     // ==================== Hash Field 常量 ====================
 
     public static final String FIELD_USER_ID = "userId";
+    /** 一次登录的稳定标识，刷新时保持不变。 */
+    public static final String FIELD_LOGIN_SESSION_ID = "loginSessionId";
     public static final String FIELD_USERNAME = "username";
     public static final String FIELD_NICKNAME = "nickname";
     public static final String FIELD_ROLES = "roles";

@@ -15,6 +15,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Refresh Token Service 实现
@@ -28,6 +30,11 @@ public class RefreshTokenServiceImpl extends ServiceImpl<RefreshTokenMapper, Ref
 
     @Override
     public void create(String rawToken, Long userId, String sessionId, String userAgent, String ip) {
+        this.create(rawToken, userId, sessionId, sessionId, userAgent, ip);
+    }
+
+    @Override
+    public void create(String rawToken, Long userId, String sessionId, String loginSessionId, String userAgent, String ip) {
         var tokenHash = this.hashToken(rawToken);
         var expireTime = LocalDateTime.now().plusDays(authProperties.getToken().getRefreshExpire());
 
@@ -35,6 +42,7 @@ public class RefreshTokenServiceImpl extends ServiceImpl<RefreshTokenMapper, Ref
                 .setTokenHash(tokenHash)
                 .setUserId(userId)
                 .setSessionId(sessionId)
+                .setLoginSessionId(loginSessionId)
                 .setExpireTime(expireTime)
                 .setUserAgent(userAgent)
                 .setIp(ip);
@@ -44,6 +52,12 @@ public class RefreshTokenServiceImpl extends ServiceImpl<RefreshTokenMapper, Ref
 
     @Override
     public RefreshToken verify(String rawToken) {
+        var token = this.findForLogout(rawToken);
+        return token != null && !Boolean.TRUE.equals(token.getRotated()) ? token : null;
+    }
+
+    @Override
+    public RefreshToken findForLogout(String rawToken) {
         var tokenHash = this.hashToken(rawToken);
 
         var refreshToken = super.getOne(
@@ -62,6 +76,24 @@ public class RefreshTokenServiceImpl extends ServiceImpl<RefreshTokenMapper, Ref
         }
 
         return refreshToken;
+    }
+
+    @Override
+    public void markRotated(String tokenHash) {
+        super.update(Wrappers.<RefreshToken>lambdaUpdate()
+                .eq(RefreshToken::getTokenHash, tokenHash).set(RefreshToken::getRotated, true));
+    }
+
+    @Override
+    public Set<String> revokeLoginSession(Long userId, String loginSessionId) {
+        var sessions = super.list(Wrappers.<RefreshToken>lambdaQuery()
+                        .eq(RefreshToken::getUserId, userId)
+                        .eq(RefreshToken::getLoginSessionId, loginSessionId)
+                        .eq(RefreshToken::getRotated, false)).stream()
+                .map(RefreshToken::getSessionId).collect(Collectors.toSet());
+        super.remove(Wrappers.<RefreshToken>lambdaQuery()
+                .eq(RefreshToken::getUserId, userId).eq(RefreshToken::getLoginSessionId, loginSessionId));
+        return sessions;
     }
 
     @Override

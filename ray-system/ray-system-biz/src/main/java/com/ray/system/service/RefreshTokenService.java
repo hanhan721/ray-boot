@@ -3,6 +3,8 @@ package com.ray.system.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.ray.system.api.entity.RefreshToken;
 
+import java.util.Set;
+
 /**
  * Refresh Token Service
  */
@@ -18,6 +20,18 @@ public interface RefreshTokenService extends IService<RefreshToken> {
      * @param ip          登录 IP
      */
     void create(String rawToken, Long userId, String sessionId, String userAgent, String ip);
+
+    /** 在同一次登录内签发轮换凭据。 */
+    void create(String rawToken, Long userId, String sessionId, String loginSessionId, String userAgent, String ip);
+
+    /** 查找尚未过期的凭据（包含已轮换记录），仅供登出定位。 */
+    RefreshToken findForLogout(String rawToken);
+
+    /** 保留旧凭据的撤销映射，禁止它再次续期。 */
+    void markRotated(String tokenHash);
+
+    /** 撤销指定登录及其轮换历史，返回需要撤销的当前 Access Token 摘要。 */
+    Set<String> revokeLoginSession(Long userId, String loginSessionId);
 
     /**
      * 验证 Refresh Token

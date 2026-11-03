@@ -5,6 +5,8 @@ CREATE TABLE sys_refresh_token (
     token_hash      VARCHAR(64)     NOT NULL,                               -- Token的SHA-256哈希值
     user_id         BIGINT          NOT NULL,                               -- 用户ID
     session_id      VARCHAR(64)     NOT NULL,                               -- 关联的会话摘要
+    login_session_id VARCHAR(64)    NOT NULL,                               -- 一次登录的稳定标识
+    rotated         BOOLEAN         NOT NULL DEFAULT FALSE,                -- 已轮换凭据仅供登出定位
     expire_time     TIMESTAMP       NOT NULL,                               -- 过期时间
     user_agent      VARCHAR(500),                                           -- 设备信息
     ip              VARCHAR(50),                                            -- 登录IP
@@ -14,5 +16,7 @@ CREATE TABLE sys_refresh_token (
 
 CREATE UNIQUE INDEX uk_token_hash ON sys_refresh_token (token_hash);
 CREATE UNIQUE INDEX uk_session_id ON sys_refresh_token (session_id);
+CREATE UNIQUE INDEX uk_refresh_current_login ON sys_refresh_token (login_session_id) WHERE rotated = FALSE;
+CREATE INDEX idx_refresh_login_session ON sys_refresh_token (login_session_id);
 CREATE INDEX idx_user_id ON sys_refresh_token (user_id);
 CREATE INDEX idx_expire_time ON sys_refresh_token (expire_time);

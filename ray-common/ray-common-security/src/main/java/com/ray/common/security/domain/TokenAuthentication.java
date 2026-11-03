@@ -17,14 +17,22 @@ public class TokenAuthentication extends AbstractAuthenticationToken {
     private static final long serialVersionUID = 1L;
 
     private final String sessionId;
+    private final String loginSessionId;
     private final LoginUser loginUser;
     private final UserAuthorization authorization;
 
     public TokenAuthentication(String sessionId, LoginUser loginUser,
                                Collection<? extends GrantedAuthority> authorities,
                                UserAuthorization authorization) {
+        this(sessionId, sessionId, loginUser, authorities, authorization);
+    }
+
+    public TokenAuthentication(String sessionId, String loginSessionId, LoginUser loginUser,
+                               Collection<? extends GrantedAuthority> authorities,
+                               UserAuthorization authorization) {
         super(authorities);
         this.sessionId = sessionId;
+        this.loginSessionId = loginSessionId;
         this.loginUser = loginUser;
         this.authorization = java.util.Objects.requireNonNull(authorization);
         super.setAuthenticated(true);

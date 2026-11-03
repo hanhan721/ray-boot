@@ -42,6 +42,12 @@ public class RefreshToken implements Serializable {
      */
     private String sessionId;
 
+    /** 一次登录的稳定标识，轮换记录共用此标识。 */
+    private String loginSessionId;
+
+    /** 已轮换的凭据仅供登出定位，不再允许续期。 */
+    private Boolean rotated;
+
     /**
      * 过期时间
      */

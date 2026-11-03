@@ -48,6 +48,11 @@ public class TokenService {
      * @return Access Token UUID
      */
     public String createAccessToken(LoginUser loginUser, String nickname, String browser, String os) {
+        return this.createAccessToken(loginUser, nickname, browser, os, null);
+    }
+
+    /** 续期时沿用稳定的登录标识；Access Token 仍独立轮换。 */
+    public String createAccessToken(LoginUser loginUser, String nickname, String browser, String os, String loginSessionId) {
         var authorization = authorizationProvider.getAuthorization(loginUser.userId());
         var uuid = UUID.randomUUID().toString();
         var sessionId = TokenService.hashAccessToken(uuid);
@@ -57,6 +62,7 @@ public class TokenService {
         var sessionKey = AuthCacheConstants.SESSION_KEY_PREFIX + sessionId;
         Map<String, Object> fields = new HashMap<>();
         fields.put(AuthCacheConstants.FIELD_USER_ID, loginUser.userId());
+        fields.put(AuthCacheConstants.FIELD_LOGIN_SESSION_ID, loginSessionId != null ? loginSessionId : sessionId);
         fields.put(AuthCacheConstants.FIELD_USERNAME, loginUser.username());
         fields.put(AuthCacheConstants.FIELD_NICKNAME, nickname != null ? nickname : "");
         fields.put(AuthCacheConstants.FIELD_LOGIN_TIME, loginUser.loginTime().toString());
@@ -139,7 +145,11 @@ public class TokenService {
         var authorities = authorization.roles().stream()
                 .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
                 .toList();
-        return new TokenAuthentication(sessionId, loginUser, authorities, authorization);
+        var loginSessionId = fields.getOrDefault(AuthCacheConstants.FIELD_LOGIN_SESSION_ID, sessionId);
+        if (!(loginSessionId instanceof String stableId) || stableId.isBlank()) {
+            return null;
+        }
+        return new TokenAuthentication(sessionId, stableId, loginUser, authorities, authorization);
     }
 
     /** 捕获用户现有会话标识；此处不读取或加载授权。 */

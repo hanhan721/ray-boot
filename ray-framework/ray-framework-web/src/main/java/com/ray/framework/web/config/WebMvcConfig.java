@@ -5,9 +5,14 @@ import com.ray.framework.web.translate.TranslateCollector;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
+import org.springframework.http.converter.ByteArrayHttpMessageConverter;
+import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import tools.jackson.databind.json.JsonMapper;
+
+import java.util.List;
 
 /**
  * Web MVC 配置
@@ -45,5 +50,17 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .allowCredentials(true)
                 .exposedHeaders("X-Request-Id")
                 .maxAge(3600);
+    }
+
+    /**
+     * springdoc 的文档端点（/v3/api-docs/**）返回 {@code byte[]}，Jackson 会将其序列化为
+     * Base64 字符串，导致 Scalar 无法解析。在 Jackson 转换器之前插入支持
+     * {@code application/json} 的字节转换器，使文档字节原样输出。
+     */
+    @Override
+    public void extendMessageConverters(List<HttpMessageConverter<?>> converters) {
+        ByteArrayHttpMessageConverter byteArrayConverter = new ByteArrayHttpMessageConverter();
+        byteArrayConverter.setSupportedMediaTypes(List.of(MediaType.APPLICATION_JSON, MediaType.APPLICATION_OCTET_STREAM));
+        converters.add(0, byteArrayConverter);
     }
 }

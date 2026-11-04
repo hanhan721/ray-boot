@@ -110,6 +110,9 @@ springdoc:
 
 scalar:
   enabled: ${ray.api-docs.enabled}
+  # starter 自带页面挪到内部路径，仅提供 scalar.js；/scalar 由 ScalarController 接管（默认选中分组）
+  # 注意：不能改为 /scalar，否则与 ScalarController 映射冲突导致启动失败
+  path: /scalar-starter
 
 # 日志配置 (详细配置见 logback-spring.xml)
 logging:

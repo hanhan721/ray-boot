@@ -53,6 +53,9 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/scalar",
                                 "/scalar/**",
+                                // starter 自带页面（内部路径，仅提供 scalar.js）
+                                "/scalar-starter",
+                                "/scalar-starter/**",
                                 "/v3/api-docs",
                                 "/v3/api-docs/**",
                                 "/v3/api-docs.yaml",

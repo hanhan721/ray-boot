@@ -16,11 +16,15 @@ import tools.jackson.databind.ValueDeserializer;
 import tools.jackson.databind.ValueSerializer;
 import tools.jackson.databind.cfg.HandlerInstantiator;
 import tools.jackson.databind.cfg.MapperConfig;
+import tools.jackson.databind.ext.javatime.ser.LocalDateTimeSerializer;
 import tools.jackson.databind.introspect.Annotated;
+import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.jsontype.TypeIdResolver;
 import tools.jackson.databind.jsontype.TypeResolverBuilder;
 import tools.jackson.databind.module.SimpleModule;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.TimeZone;
 
 /**
@@ -28,6 +32,11 @@ import java.util.TimeZone;
  */
 @Configuration
 public class JacksonConfig {
+
+    /**
+     * 日期时间输出格式
+     */
+    private static final String DATE_TIME_PATTERN = "yyyy-MM-dd HH:mm:ss";
 
     @Bean
     public JsonMapperBuilderCustomizer jsonMapperCustomizer(BeanFactory beanFactory,
@@ -37,6 +46,8 @@ public class JacksonConfig {
             builder.defaultTimeZone(TimeZone.getTimeZone("Asia/Shanghai"))
                     .handlerInstantiator(new BeanLookupHandlerInstantiator(beanFactory, autowireBeanFactory));
 
+            registerJavaTimeSerializers(builder);
+
             var fieldPermModule = new SimpleModule("FieldPermission");
             fieldPermModule.setSerializerModifier(new FieldPermissionSerializerModifier(permissionEvaluator));
             builder.addModule(fieldPermModule);
@@ -45,6 +56,19 @@ public class JacksonConfig {
             translateModule.setSerializerModifier(new TranslateSerializerModifier(permissionEvaluator));
             builder.addModule(translateModule);
         };
+    }
+
+    /**
+     * 统一 Java 时间类型的序列化格式。
+     * <p>
+     * 仅注册序列化器，反序列化保持 Jackson 默认的 ISO-8601 解析，
+     * 避免影响查询参数中的 {@code 2026-11-03T00:00:00} 这类入参。
+     */
+    static void registerJavaTimeSerializers(JsonMapper.Builder builder) {
+        var javaTimeModule = new SimpleModule("JavaTimeFormat");
+        var formatter = DateTimeFormatter.ofPattern(DATE_TIME_PATTERN);
+        javaTimeModule.addSerializer(LocalDateTime.class, new LocalDateTimeSerializer(formatter));
+        builder.addModule(javaTimeModule);
     }
 
     /**

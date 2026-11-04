@@ -27,6 +27,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -172,6 +173,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     private Set<String> extractCodes(List<SysPermission> permissions) {
         return permissions.stream()
+                .filter(Objects::nonNull)
                 .map(SysPermission::getCode)
                 .filter(StringUtils::hasText)
                 .collect(Collectors.toSet());
@@ -179,7 +181,9 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     @Override
     public Set<String> getCodesByUserId(Long userId) {
-        var wrapper = this.userPermissionsQuery(userId).select(SysPermission::getCode);
+        var wrapper = this.userPermissionsQuery(userId)
+                .select(SysPermission::getCode)
+                .isNotNull(SysPermission::getCode);
         return this.extractCodes(baseMapper.selectJoinList(SysPermission.class, wrapper));
     }
 
@@ -187,6 +191,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     public Set<String> getAllCodes() {
         return this.extractCodes(super.list(Wrappers.<SysPermission>lambdaQuery()
                 .select(SysPermission::getCode)
+                .isNotNull(SysPermission::getCode)
                 .eq(SysPermission::getEnabled, true)));
     }
 

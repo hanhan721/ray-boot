@@ -4,7 +4,7 @@ Spring Boot 4.0.x 后台管理系统脚手架，三层架构（Controller-Servic
 
 ## 技术栈
 
-Java 25 | Spring Boot 4.0.x | Spring Security 7.x + JWT | PostgreSQL 17 | MyBatis-Plus 3.5.15 | Valkey 9.0 | MapStruct | Knife4j
+Java 25 | Spring Boot 4.0.x | Spring Security 7.x + JWT | PostgreSQL 18 | MyBatis-Plus 3.5.15 | Valkey 9.1 | MapStruct | Knife4j
 
 ## Java 现代特性 (25)
 
@@ -247,8 +247,8 @@ mvnw.cmd clean compile              # 编译 (Windows)
 mvnw.cmd clean package -DskipTests  # 打包 (Windows)
 
 # Docker
-docker-compose up -d             # 启动容器
-docker-compose down              # 停止容器
+docker compose up -d             # 启动容器
+docker compose down              # 停止容器
 ```
 
 ## 项目结构

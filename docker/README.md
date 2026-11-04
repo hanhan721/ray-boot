@@ -2,9 +2,9 @@
 
 使用 Docker Compose 快速部署项目所需的中间件服务：
 
-- **PostgreSQL 17** - 关系型数据库
-- **Valkey 8.1.5** - 兼容 Redis 的缓存服务
-- **RustFS** - 对象存储服务
+- **PostgreSQL 18** - 关系型数据库
+- **Valkey 9.1** - 兼容 Redis 的缓存服务
+- **RustFS 1.0.4** - 对象存储服务
 
 ## 快速开始
 
@@ -23,13 +23,13 @@ vim .env
 
 ```bash
 # 启动所有中间件
-docker-compose up -d
+docker compose up -d
 
 # 查看服务状态
-docker-compose ps
+docker compose ps
 
 # 查看日志
-docker-compose logs -f
+docker compose logs -f
 ```
 
 ### 3. 连接信息
@@ -37,18 +37,20 @@ docker-compose logs -f
 | 服务 | 本地端口 | 说明 |
 |------|---------|------|
 | PostgreSQL | 5432 | 数据库 |
-| Valkey | 16379 | 缓存 |
-| RustFS API | 19000 | 对象存储 API |
-| RustFS Console | 19001 | 对象存储控制台 |
+| Valkey | 6379 | 缓存 |
+| RustFS API | 9000 | 对象存储 API |
+| RustFS Console | 9001 | 对象存储控制台 |
+
+> 以上为 `.env.production` 中的默认端口，可通过 `.env` 中的 `PG_PORT`、`VALKEY_PORT`、`RUSTFS_API_PORT`、`RUSTFS_CONSOLE_PORT` 修改。
 
 ### 4. 停止服务
 
 ```bash
 # 停止服务
-docker-compose down
+docker compose down
 
 # 停止服务并删除数据卷（谨慎操作）
-docker-compose down -v
+docker compose down -v
 ```
 
 ## 数据持久化
@@ -61,4 +63,4 @@ docker-compose down -v
 
 ## 初始化数据库
 
-首次启动 PostgreSQL 时会自动执行 `docs/sql/` 目录下的 SQL 脚本进行初始化。
+首次启动 PostgreSQL 时会自动按文件名顺序执行 `docs/sql/` 目录下的 SQL 脚本进行初始化（表结构 `sys_*.sql` 在前，初始化数据 `zz_init_data.sql` 在后，请保持该命名顺序）。

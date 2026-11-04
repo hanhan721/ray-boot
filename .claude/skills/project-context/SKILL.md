@@ -16,9 +16,9 @@ Ray-Boot 是基于 Spring Boot 4.0.x 的后台管理系统脚手架，采用经�
 | 语言 | Java 25 (LTS) |
 | 框架 | Spring Boot 4.0.x / Spring Framework 7.x |
 | 安全 | Spring Security 7.x + JWT |
-| 数据库 | PostgreSQL 17 |
+| 数据库 | PostgreSQL 18 |
 | ORM | MyBatis-Plus 3.5.15 + MyBatis-Plus-Join |
-| 缓存 | Valkey 9.0 |
+| 缓存 | Valkey 9.1 |
 | 对象转换 | MapStruct 1.5.x |
 | API 文档 | Knife4j 4.x |
 

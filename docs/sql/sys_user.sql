@@ -1,5 +1,5 @@
 -- 用户表
-CREATE TYPE gender AS ENUM ('UNKNOWN', 'MALE', 'FEMALE');
+CREATE TYPE gender AS ENUM ('SECRET', 'MALE', 'FEMALE');
 
 DROP TABLE IF EXISTS sys_user;
 CREATE TABLE sys_user (
@@ -10,7 +10,7 @@ CREATE TABLE sys_user (
     email           VARCHAR(100),                                           -- 邮箱
     phone           VARCHAR(20),                                            -- 手机号
     avatar          VARCHAR(255),                                           -- 头像
-    gender          gender          NOT NULL DEFAULT 'UNKNOWN',             -- 性别
+    gender          gender          NOT NULL DEFAULT 'SECRET',              -- 性别
     enabled         BOOLEAN         NOT NULL DEFAULT TRUE,                  -- 是否启用
     remark          VARCHAR(500),                                           -- 备注
     last_login_time TIMESTAMP,                                              -- 最后登录时间

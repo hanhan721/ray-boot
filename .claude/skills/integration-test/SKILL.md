@@ -112,7 +112,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 ### 数据库约定
 
-- 数据库: `ray` (PostgreSQL 17)
+- 数据库: `ray` (PostgreSQL 18)
 - ID 策略: 雪花算法 (assign_id)
 - 逻辑删除: `deleted` 字段 (false=未删除, true=已删除)
 - 表名前缀: `sys_` (系统模块)

@@ -14,7 +14,7 @@
 - **高效开发**：集成 MyBatis-Plus-Join (MPJ)，支持无需 XML 的类型安全联表查询。
 - **安全可靠**：基于 Spring Security 7.x 和 JWT，提供细粒度的权限控制（功能权限 + 字段级权限）。
 - **字段翻译**：内置轻量级 `@Translate` 机制，自动处理字典和关联实体的字段翻译。
-- **高性能缓存**：深度适配 Valkey 9.0（Redis 的高性能替代品）。
+- **高性能缓存**：深度适配 Valkey 9.1（Redis 的高性能替代品）。
 - **工程规范**：严格的模块化设计，清晰的分层职责，完善的 API 文档。
 
 ## ✨ 项目亮点
@@ -60,7 +60,7 @@ graph TD
 
 ### 核心技术组件
 - **自动化翻译**：通过 `@Translate` 注解，零代码实现字典值（dict）和关联实体（entity）的名称回填。
-- **高性能缓存**：基于 Valkey 9.0，提供多级缓存支持与分布式锁工具。
+- **高性能缓存**：基于 Valkey 9.1，提供多级缓存支持与分布式锁工具。
 - **联表查询**：集成 MyBatis-Plus-Join (MPJ)，在 Service 层即可完成复杂的类型安全联表操作。
 - **现代响应规范**：遵循 RFC 9457 (Problem Details) 标准化错误响应，提升前后端交互体验。
 - **虚拟线程适配**：针对 Java 25 虚拟线程优化的 I/O 操作，大幅提升高并发场景下的系统吞吐量。
@@ -77,8 +77,8 @@ graph TD
 | --- | --- |
 | 核心框架 | Java 25, Spring Boot 4.0.x, Spring Framework 7.x |
 | 安全框架 | Spring Security 7.x, JWT |
-| 持久层 | PostgreSQL 17, MyBatis-Plus 3.5.15, MyBatis-Plus-Join |
-| 缓存 | Valkey 9.0 (Spring Cache) |
+| 持久层 | PostgreSQL 18, MyBatis-Plus 3.5.15, MyBatis-Plus-Join |
+| 缓存 | Valkey 9.1 (Spring Cache) |
 | API 文档 | Knife4j (Swagger/OpenAPI 3) |
 | 其他 | MapStruct, Jackson 3.x, Docker |
 
@@ -99,12 +99,13 @@ ray-boot
 
 ### 1. 环境准备
 - JDK 25
-- PostgreSQL 17
-- Valkey 9.0 (或 Redis)
+- PostgreSQL 18
+- Valkey 9.1 (或 Redis)
+- RustFS 1.0.4（对象存储，默认存储类型）
 - Maven 3.9+
 
 ### 2. 数据库配置
-执行 `docs/sql/` 目录下的 SQL 脚本初始化数据库。
+使用 Docker Compose 启动时（见 `docker/README.md`），首次启动会自动初始化 `docs/sql/` 下的脚本；手动部署时按文件名顺序执行该目录下的 SQL 脚本。
 
 ### 3. 修改配置
 编辑 `ray-boot-app/src/main/resources/application.yml`，配置数据库和 Valkey 连接信息。

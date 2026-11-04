@@ -12,6 +12,7 @@ import com.ray.system.api.entity.SysUser;
 import com.ray.system.mapper.UserMapper;
 import com.ray.system.security.AuthorizationSessionCoordinator;
 import com.ray.system.security.SuperAdminGuard;
+import com.ray.system.service.DeptService;
 import com.ray.system.service.UserDeptService;
 import com.ray.system.service.UserRoleService;
 import com.ray.system.service.UserService;
@@ -20,6 +21,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
 
 import java.util.Set;
 
@@ -32,6 +34,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
 
     private final UserRoleService userRoleService;
     private final UserDeptService userDeptService;
+    private final DeptService deptService;
     private final PasswordEncoder passwordEncoder;
     private final AuthorizationSessionCoordinator sessionCoordinator;
     private final SuperAdminGuard superAdminGuard;
@@ -117,8 +120,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         superAdminGuard.checkUsers(ids);
         sessionCoordinator.revokeUsers(ids);
 
-        // 删除用户角色关联
+        // 删除用户角色、部门关联
         userRoleService.deleteByUserIds(ids);
+        userDeptService.deleteByUserIds(ids);
 
         super.removeByIds(ids);
     }
@@ -163,8 +167,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Transactional(rollbackFor = Exception.class)
     public void assignDepts(Long userId, Set<Long> deptIds) {
         AssertUtils.notNull(userId, "用户 ID 不能为空");
-        AssertUtils.notNull(super.getById(userId), "用户不存在");
+        // 与用户删除共用用户行锁，避免删除完成后又写入部门关联。
+        AssertUtils.notNull(this.getByIdForUpdate(userId), "用户不存在");
         superAdminGuard.checkUsers(Set.of(userId));
+        if (!CollectionUtils.isEmpty(deptIds)) {
+            // 锁定目标部门行，并与部门删除互斥，避免写入已删除部门。
+            var existingDepts = deptService.listByIdsForUpdate(deptIds);
+            AssertUtils.isTrue(existingDepts.size() == deptIds.size(), "部门不存在或已删除");
+        }
         userDeptService.saveUserDepts(userId, deptIds);
     }
 

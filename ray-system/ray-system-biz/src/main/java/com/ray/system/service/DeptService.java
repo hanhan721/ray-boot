@@ -3,6 +3,7 @@ package com.ray.system.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.ray.system.api.entity.SysDept;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
@@ -32,6 +33,14 @@ public interface DeptService extends IService<SysDept> {
      * @return 部门信息
      */
     SysDept getById(Long id);
+
+    /**
+     * 按 ID 升序锁定部门行，必须在事务内调用。
+     *
+     * @param ids 部门 ID 集合
+     * @return 实际存在的部门
+     */
+    List<SysDept> listByIdsForUpdate(Collection<Long> ids);
 
     /**
      * 新增部门

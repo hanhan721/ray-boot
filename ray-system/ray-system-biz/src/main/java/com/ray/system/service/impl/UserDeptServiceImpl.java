@@ -2,6 +2,8 @@ package com.ray.system.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.github.yulichang.wrapper.MPJLambdaWrapper;
+import com.ray.system.api.entity.SysUser;
 import com.ray.system.api.entity.SysUserDept;
 import com.ray.system.mapper.UserDeptMapper;
 import com.ray.system.service.UserDeptService;
@@ -102,9 +104,11 @@ public class UserDeptServiceImpl extends ServiceImpl<UserDeptMapper, SysUserDept
         if (CollectionUtils.isEmpty(deptIds)) {
             return false;
         }
-        return super.exists(
-                Wrappers.<SysUserDept>lambdaQuery()
-                        .in(SysUserDept::getDeptId, deptIds)
-        );
+        var query = new MPJLambdaWrapper<SysUserDept>()
+                .innerJoin(SysUser.class, SysUser::getId, SysUserDept::getUserId)
+                .in(SysUserDept::getDeptId, deptIds)
+                .eq(SysUser::getDeleted, false);
+        var count = baseMapper.selectJoinCount(query);
+        return count != null && count > 0;
     }
 }

@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -48,6 +49,14 @@ public class DeptServiceImpl extends ServiceImpl<DeptMapper, SysDept> implements
     @Override
     public SysDept getById(Long id) {
         return super.getById(id);
+    }
+
+    @Override
+    public List<SysDept> listByIdsForUpdate(Collection<Long> ids) {
+        if (CollectionUtils.isEmpty(ids)) {
+            return List.of();
+        }
+        return baseMapper.selectByIdsForUpdate(ids);
     }
 
     @CacheEvict(cacheNames = SystemCacheConstants.DEPT, allEntries = true)
@@ -84,6 +93,8 @@ public class DeptServiceImpl extends ServiceImpl<DeptMapper, SysDept> implements
         if (CollectionUtils.isEmpty(ids)) {
             return;
         }
+        // 锁定目标部门行，避免与用户部门分配并发时通过检查后产生悬空关联。
+        this.listByIdsForUpdate(ids);
         // 检查是否有子级（排除同时要删除的子级）
         var childCount = super.count(
                 Wrappers.<SysDept>lambdaQuery()
@@ -94,6 +105,9 @@ public class DeptServiceImpl extends ServiceImpl<DeptMapper, SysDept> implements
 
         // 检查是否有用户关联
         AssertUtils.isFalse(userDeptService.existsByDeptIds(ids), "部门下存在用户，无法删除");
+
+        // 清理已逻辑删除用户留下的历史关联，避免关联表继续膨胀。
+        userDeptService.deleteByDeptIds(ids);
 
         // 删除部门
         super.removeByIds(ids);

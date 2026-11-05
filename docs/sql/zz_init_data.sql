@@ -4,7 +4,7 @@
 
 -- 默认管理员（密码: admin123）
 INSERT INTO sys_user (id, username, password, nickname, email, gender, remark)
-VALUES (1, 'admin', '$2b$10$70LszmiaWXHW/FkcO2e1tuz9Y7QAH2gl5KkCsAp/1c0uwNMhINDQ.', '管理员', 'admin@example.com', 'MALE', '系统管理员');
+VALUES (1, 'admin', '$2a$10$zMgLDBpAEsu9n2lbVlXH2.K/S7W3XxNTqBjDa4UyjVrEH3M2tQVQK', '管理员', 'admin@example.com', 'MALE', '系统管理员');
 
 -- 角色
 INSERT INTO sys_role (id, role_name, role_key, sort, remark)

@@ -2,120 +2,145 @@
 
 [![Java](https://img.shields.io/badge/Java-25-orange.svg)](https://openjdk.org/projects/jdk/25/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.x-green.svg)](https://spring.io/projects/spring-boot)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-blue.svg)](https://www.postgresql.org/)
+[![Valkey](https://img.shields.io/badge/Valkey-9.1-red.svg)](https://github.com/valkey-io/valkey)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-`ray-boot` 是一个基于 **Java 25** 和 **Spring Boot 4.0.x** 构建的现代后台管理系统脚手架。它采用经典的三层架构，深度集成现代 Java 特性，旨在提供一个高性能、易扩展、且符合工程规范的开发起点。
+基于 **Java 25 + Spring Boot 4** 的后台管理系统脚手架，采用 Controller–Service–Mapper 分层，为二次开发提供认证权限、文件管理和任务调度等基础能力。
 
-**配套前端项目**：[ray-web](https://github.com/hanhan721/ray-web)
+**配套前端**：[ray-web](https://github.com/hanhan721/ray-web)
 
-## 🌟 核心特性
+[核心特性](#核心特性) · [技术栈](#技术栈) · [快速开始](#快速开始) · [项目结构与扩展](#项目结构与扩展) · [相关文档](#相关文档) · [项目截图](#项目截图) · [开源协议](#开源协议)
 
-- **现代技术栈**：紧跟 Java 25 和 Spring Boot 4.0.x，利用虚拟线程（Virtual Threads）、记录类（Record）、模式匹配等最新特性。
-- **高效开发**：集成 MyBatis-Plus-Join (MPJ)，支持无需 XML 的类型安全联表查询。
-- **安全可靠**：基于 Spring Security 7.x 和 JWT，提供细粒度的权限控制（功能权限 + 字段级权限）。
-- **字段翻译**：内置轻量级 `@Translate` 机制，自动处理字典和关联实体的字段翻译。
-- **高性能缓存**：深度适配 Valkey 9.1（Redis 的高性能替代品）。
-- **工程规范**：严格的模块化设计，清晰的分层职责，完善的 API 文档。
+## 核心特性
 
-## ✨ 项目亮点
+- **认证会话**：不透明 AccessToken + 服务端会话，支持 RefreshToken 轮换、多设备管理与主动撤销；普通请求基于缓存中的授权快照鉴权，无需查询数据库。
+- **权限与翻译**：方法级权限、字段级权限，以及字典和关联实体字段翻译，通过注解按需启用。
+- **文件管理**：统一存储接口，提供 RustFS（S3 协议）与 LOCAL 本地磁盘后端，支持引用绑定、签名访问和过期清理。
+- **系统管理**：内置用户、角色、菜单、部门、字典、系统参数、登录与操作日志。
+- **任务调度**：定时任务管理、动态启停、手动执行及执行日志，使用注解校验可调度任务。
+- **模块扩展**：Maven 多模块组织依赖，提供通知渠道、字段翻译、文件引用检查等接口，便于接入业务能力。
 
-- **Valkey：Redis 的完美开源替代**
-    - [Valkey](https://github.com/valkey-io/valkey) 是由 Linux 基金会支持的 Redis 完美替代品。
-    - 解决 Redis 7.2 后因商业授权协议变更（从 BSD 变为 RSALv2/SSPL）带来的法律与商业风险，保持 100% 的开源纯粹性。
-- **RustFS：MinIO 的现代替代方案**
-    - [RustFS](https://github.com/rustfs/rustfs) 是一款高性能、S3 兼容的对象存储系统。
-    - 针对 MinIO 商业授权政策收紧的情况，提供更轻量级、更高性能（基于 Rust 零成本抽象）的开源存储选择。
-- **双 Token 安全机制**
-    - 深度集成 **AccessToken + RefreshToken** 登录模型。
-    - AccessToken 短效性保障实时安全，RefreshToken 负责静默续期，在保障安全性的同时提供极致的用户体验。
-- **现代 Java 25 生产实践**
-    - 全面落地 Java 25 虚拟线程、Record、密封类等新特性，不仅是“可用”，更是“最佳实践”。
-
-## 🏗️ 架构设计
-
-项目采用 Maven 多模块架构，严格遵循**依赖倒置原则 (DIP)**，确保模块间解耦，增强系统的可维护性和可测试性。
-
-### 模块依赖关系
-```mermaid
-graph TD
-    App(ray-boot-app) --> System(ray-system-biz)
-    App --> Schedule(ray-schedule)
-    System --> Framework(ray-framework)
-    Framework --> Common(ray-common)
-```
-- **依赖倒置实践**：低层模块（如 `ray-common`）通过定义接口（如 `ReferenceChecker`），由高层业务模块（如 `ray-system-biz`）实现，并利用 Spring 的集合注入机制，实现跨模块的解耦调用。
-
-## 💎 集成功能
-
-作为一款生产级的脚手架，`ray-boot` 内置了丰富的核心业务功能与技术组件：
-
-### 核心业务功能
-- **系统管理**：完善的用户、角色、菜单、部门、岗位管理。
-- **权限控制**：
-    - **功能权限**：基于 Spring Security 7.x 的动态权限检查。
-    - **字段权限**：使用 `@FieldPermission` 实现响应 JSON 字段的按需隐藏。
-- **字典管理**：动态配置系统参数与业务字典。
-- **日志审计**：自动化记录操作日志，支持异常追踪。
-- **任务调度**：集成定时任务管理。
-
-### 核心技术组件
-- **自动化翻译**：通过 `@Translate` 注解，零代码实现字典值（dict）和关联实体（entity）的名称回填。
-- **高性能缓存**：基于 Valkey 9.1，提供多级缓存支持与分布式锁工具。
-- **联表查询**：集成 MyBatis-Plus-Join (MPJ)，在 Service 层即可完成复杂的类型安全联表操作。
-- **现代响应规范**：遵循 RFC 9457 (Problem Details) 标准化错误响应，提升前后端交互体验。
-- **虚拟线程适配**：针对 Java 25 虚拟线程优化的 I/O 操作，大幅提升高并发场景下的系统吞吐量。
-
-## 📸 项目截图
-
-| 界面预览 1 | 界面预览 2 |
-| :---: | :---: |
-| ![Screenshot 1](docs/images/screenshot1.png) | ![Screenshot 2](docs/images/screenshot2.png) |
-
-## 🛠️ 技术栈
+## 技术栈
 
 | 类别 | 技术 |
 | --- | --- |
-| 核心框架 | Java 25, Spring Boot 4.0.x, Spring Framework 7.x |
-| 安全框架 | Spring Security 7.x, JWT |
-| 持久层 | PostgreSQL 18, MyBatis-Plus 3.5.15, MyBatis-Plus-Join |
-| 缓存 | Valkey 9.1 (Spring Cache) |
-| API 文档 | Knife4j (Swagger/OpenAPI 3) |
-| 其他 | MapStruct, Jackson 3.x, Docker |
+| 核心框架 | Java 25、Spring Boot 4.0.1、Spring Framework 7，启用虚拟线程 |
+| 安全认证 | Spring Security 7、服务端会话、RefreshToken 轮换 |
+| 数据访问 | PostgreSQL 18、MyBatis-Plus 3.5.15、MyBatis-Plus-Join 1.5.5 |
+| 缓存 | Valkey 9.1、Spring Cache、Lettuce |
+| 文件存储 | RustFS 1.0.4、AWS SDK for Java v2（S3）、本地磁盘 |
+| JSON 与 API 文档 | Jackson 3、SpringDoc 3.0.1、Scalar |
+| 开发工具 | Maven Wrapper、Lombok、Docker Compose |
 
-## 📂 项目结构
-
-```text
-ray-boot
-├── ray-boot-app        # 启动模块（入口）
-├── ray-system          # 系统管理模块（用户、角色、权限等）
-├── ray-framework       # 框架核心模块（Web 配置、日志、异常处理）
-├── ray-common          # 公共基础模块（工具类、MyBatis、Valkey 配置）
-├── ray-schedule        # 任务调度模块
-├── ray-business        # 业务逻辑占位模块（按需扩展）
-└── docs                # 文档及 SQL 脚本
-```
-
-## 🚀 快速开始
+## 快速开始
 
 ### 1. 环境准备
-- JDK 25
-- PostgreSQL 18
-- Valkey 9.1 (或 Redis)
-- RustFS 1.0.4（对象存储，默认存储类型）
-- Maven 3.9+
 
-### 2. 数据库配置
-使用 Docker Compose 启动时（见 `docker/README.md`），首次启动会自动初始化 `docs/sql/` 下的脚本；手动部署时按文件名顺序执行该目录下的 SQL 脚本。
+本地准备 **JDK 25** 和 **Docker Compose**。项目附带 Maven Wrapper，无需单独安装 Maven；Java 版本配置见 [mise.toml](mise.toml)。
 
-### 3. 修改配置
-编辑 `ray-boot-app/src/main/resources/application.yml`，配置数据库和 Valkey 连接信息。
+PostgreSQL、Valkey 和 RustFS 可通过下面的 Compose 配置启动；使用已有服务时，可直接配置连接信息。
 
-### 4. 编译启动
+### 2. 启动中间件
+
+在仓库根目录执行：
+
 ```bash
-# 编译项目
-./mvnw clean install
+cd docker
+cp .env.production .env      # PowerShell: Copy-Item .env.production .env
+# 编辑 .env，设置数据库、缓存及对象存储的密码
+docker compose up -d
+cd ..
+```
 
-# 运行应用
+首次启动 PostgreSQL 会自动执行 [docs/sql/](docs/sql/) 中的初始化脚本。端口与数据持久化配置见 [中间件部署](docker/README.md)。
+
+默认使用 `RUST_FS` 后端，启动应用前需按 [文件存储部署](docs/deployment/file-storage.md) 预建私有桶。
+
+如需使用本地磁盘，将 `application.yml` 中的 `ray.storage.storage-type` 改为 `LOCAL`，中间件只需启动 `docker compose up -d postgres valkey`（在 `docker/` 下执行）。切换已有存储后端前需先迁移文件数据。
+
+### 3. 设置应用环境变量
+
+参考 [环境变量模板](ray-boot-app/src/main/resources/.env.example)，在终端或 IDE 的运行配置中设置：
+
+| 变量 | 用途 |
+| --- | --- |
+| `PG_*` | PostgreSQL 地址、端口、数据库、用户名和密码 |
+| `REDIS_*` | Valkey 地址、端口和密码；应用默认使用 database 1 |
+| `RAY_AUTH_REFRESH_SALT` | 必填，RefreshToken 哈希盐，建议使用至少 32 位随机串 |
+| `PARAM_ENCRYPT_KEY` | 必填，32 字节随机密钥的 Base64 编码，用于系统参数 AES-256 加密 |
+| `RAY_STORAGE_PUBLIC_BASE_URL` | 必填，文件访问基址；LOCAL 时填应用地址，如 `http://localhost:9527` |
+| `RAY_STORAGE_SIGN_SECRET` | 必填，文件签名密钥，多实例需共用同一稳定值 |
+| `RUSTFS_*` | RUST_FS 后端的地址、凭据与桶名，需与实际创建的桶一致 |
+
+**Compose 的 `.env` 不会自动传入本地 Java 进程**。应用的连接信息需与中间件配置一致，其中 Valkey 使用 `REDIS_*` 变量。
+
+上述四项必填的安全与文件配置没有环境变量默认值，使用 LOCAL 时也需设置。其余配置见 [application.yml](ray-boot-app/src/main/resources/application.yml)。
+
+### 4. 构建与启动
+
+在仓库根目录执行：
+
+```bash
+./mvnw clean install
 cd ray-boot-app
 ../mvnw spring-boot:run
 ```
+
+Windows PowerShell 使用：
+
+```powershell
+.\mvnw.cmd clean install
+cd ray-boot-app
+..\mvnw.cmd spring-boot:run
+```
+
+服务默认端口为 **9527**。API 文档默认关闭；启动前设置 `RAY_API_DOCS_ENABLED=true` 后，可访问 [Scalar 文档](http://localhost:9527/scalar)。
+
+## 项目结构与扩展
+
+```text
+ray-boot/
+├── ray-boot-app/     # 启动入口与应用配置
+├── ray-system/       # 系统管理接口与业务实现
+├── ray-framework/    # Web、字段翻译、操作日志等框架能力
+├── ray-common/       # 核心工具、缓存、数据访问、安全、存储、通知
+├── ray-schedule/     # 任务调度
+├── ray-business/     # 业务扩展模块占位
+├── docker/           # 中间件部署
+└── docs/             # SQL、部署说明与设计文档
+```
+
+通过模块依赖组织分层，根 `pom.xml` 的 `dependencyManagement` 统一管理依赖版本。
+
+### 新增业务模块
+
+1. 在 `ray-business/` 下创建子模块，并在 `ray-business/pom.xml` 的 `<modules>` 中登记。
+2. 在根 `pom.xml` 的 `dependencyManagement` 中登记该模块版本。
+3. 在 `ray-boot-app/pom.xml` 中添加模块依赖。
+
+业务代码放在 `com.ray` 包下，Mapper 放在对应的 `mapper` 包中，由启动类统一扫描。新接口默认要求登录；需要细分权限时使用 `@PreAuthorize("@perm.has('...')")`。
+
+### 常用扩展入口
+
+- **通知与翻译**：实现 `Notifier` 或 `Translator` 并注册为 Spring Bean。
+- **文件引用检查**：实现 `FileReferenceChecker`，参与删除前的业务引用校验。
+- **存储后端**：实现 `StorageService`；内置后端可由自定义 Bean 替换，按配置选择新类型时需扩展 `StorageType` 与 `StorageAutoConfiguration`。
+- **定时任务**：编写带 `@ScheduleTask` 的任务 Bean，并在任务管理中登记。
+
+## 相关文档
+
+- [中间件部署](docker/README.md)：Compose 配置、连接信息与数据库初始化。
+- [文件存储部署](docs/deployment/file-storage.md)：桶权限、本地目录、签名访问与存储迁移约束。
+- [会话管理设计](docs/session-management.md)：RefreshToken 轮换、在线会话分页与升级说明。
+- [开发约定](AGENTS.md)：分层职责、权限控制、字段翻译与代码风格。
+
+## 项目截图
+
+| 界面预览 1 | 界面预览 2 |
+| :---: | :---: |
+| ![界面预览 1](docs/images/screenshot1.png) | ![界面预览 2](docs/images/screenshot2.png) |
+
+## 开源协议
+
+本项目采用 [Apache License 2.0](LICENSE)，允许商用、修改和分发，使用时需遵守许可证中的声明保留等要求。第三方依赖遵循各自的许可。

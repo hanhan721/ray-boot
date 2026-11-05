@@ -225,8 +225,10 @@ public class AuthServiceImpl implements AuthService {
         this.clearRefreshTokenCookie(httpRequest, httpResponse);
     }
 
+    /** 返回当前用户资料及授权快照，头像仅携带文件 ID，交由响应扫描批量解析。 */
     @Override
     public UserInfoVO getUserInfo() {
+        // 1.确认当前会话身份及用户有效性，禁止失效用户继续读取资料。
         var loginUser = SecurityUtils.getLoginUser();
         if (loginUser == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
@@ -237,16 +239,18 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "用户不存在");
         }
 
+        // 2.读取会话授权快照，并按当前角色按需加载菜单。
         var authorization = tokenService.getAuthorization(loginUser.userId());
         var superAdmin = authorization.roles().stream().anyMatch(authProperties.getSuperAdmin().getRoleCodes()::contains);
         var menus = superAdmin ? permissionService.getAllPermissionsDTO().menus()
                 : permissionService.getUserPermissions(loginUser.userId()).menus();
 
+        // 3.输出头像逻辑文件 ID，不在认证服务中拼接存储路径或自行签名。
         return new UserInfoVO(
                 user.getId(),
                 user.getUsername(),
                 user.getNickname(),
-                user.getAvatar(),
+                user.getAvatarFileId(),
                 authorization.roles(),
                 menus,
                 authorization.permissions()

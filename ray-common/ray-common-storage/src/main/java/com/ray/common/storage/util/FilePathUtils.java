@@ -42,7 +42,7 @@ public final class FilePathUtils {
         if (dotIndex < 0 || dotIndex == filename.length() - 1) {
             return "";
         }
-        return filename.substring(dotIndex + 1).toLowerCase();
+        return filename.substring(dotIndex + 1).toLowerCase(java.util.Locale.ROOT);
     }
 
     /**

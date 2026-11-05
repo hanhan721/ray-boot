@@ -5,7 +5,7 @@ import lombok.Getter;
 import java.time.Duration;
 
 /**
- * 访问级别
+ * 链接寿命档位，不授予访问权限，也不允许由请求参数提升档位。
  */
 @Getter
 public enum AccessLevel {

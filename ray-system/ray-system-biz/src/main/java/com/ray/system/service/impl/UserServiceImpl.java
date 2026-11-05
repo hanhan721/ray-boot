@@ -16,6 +16,7 @@ import com.ray.system.service.DeptService;
 import com.ray.system.service.UserDeptService;
 import com.ray.system.service.UserRoleService;
 import com.ray.system.service.UserService;
+import com.ray.system.file.FileBindings;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
 import java.util.Set;
+import java.util.Objects;
+import java.util.HashSet;
+import java.util.stream.Collectors;
 
 /**
  * 用户 Service 实现
@@ -38,6 +42,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     private final PasswordEncoder passwordEncoder;
     private final AuthorizationSessionCoordinator sessionCoordinator;
     private final SuperAdminGuard superAdminGuard;
+    private final FileBindings fileBindings;
 
     @Override
     public IPage<SysUser> page(UserPageQuery query) {
@@ -72,9 +77,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         );
     }
 
+    /** 新增用户并在同一事务中绑定头像；绑定失败时用户记录一并回滚。 */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void add(SysUser user) {
+        // 1.校验用户名唯一性，处理密码后再创建用户记录。
         this.checkUsernameUnique(user.getUsername(), null);
 
         // 加密密码
@@ -82,18 +89,43 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             user.setPassword(passwordEncoder.encode(user.getPassword()));
         }
 
+        // 2.暂不写入头像外键，先取得用户 ID，供文件归属校验与绑定使用。
+        var avatarId = user.getAvatarFileId();
+        user.setAvatarFileId(null);
         super.save(user);
+        // 3.统一绑定服务确认文件归属后，再写用户头像外键，保证两侧同事务一致。
+        if (avatarId != null) {
+            fileBindings.bind(avatarId, "USER_AVATAR", user.getId());
+            baseMapper.updateAvatar(user.getId(), avatarId);
+            user.setAvatarFileId(avatarId);
+        }
     }
 
+    /** 更新用户及头像引用；先绑定新文件，更新业务外键后再逻辑删除旧头像文件。 */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void update(SysUser user) {
+        // 1.禁用操作先取得授权协调锁，再校验并锁定用户行，保持跨流程锁顺序一致。
         if (Boolean.FALSE.equals(user.getEnabled())) {
             sessionCoordinator.lockForChange();
         }
         AssertUtils.notNull(user.getId(), "用户 ID 不能为空");
         superAdminGuard.checkUsers(Set.of(user.getId()));
         this.checkUsernameUnique(user.getUsername(), user.getId());
+        var previous = this.getByIdForUpdate(user.getId());
+        AssertUtils.notNull(previous, "用户不存在");
+        // 2.比较新旧头像，按文件 ID 排序加锁，并在业务外键切换前绑定新文件。
+        var avatarId = user.getAvatarFileId();
+        boolean replaceAvatar = !Objects.equals(avatarId, previous.getAvatarFileId());
+        if (replaceAvatar) {
+            var avatarIds = new HashSet<Long>();
+            if (avatarId != null) avatarIds.add(avatarId);
+            if (previous.getAvatarFileId() != null) avatarIds.add(previous.getAvatarFileId());
+            fileBindings.lockFiles(avatarIds);
+            if (avatarId != null) fileBindings.bind(avatarId, "USER_AVATAR", user.getId());
+        }
+        // 3.通用用户更新暂时排除头像字段，空头像也由显式外键更新负责清除。
+        user.setAvatarFileId(null);
 
         // 不允许通过此接口修改密码
         user.setPassword(null);
@@ -102,13 +134,20 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         var needKick = Boolean.FALSE.equals(user.getEnabled());
 
         super.updateById(user);
+        // 4.先切换真实业务外键，再释放旧文件；任一步失败均随用户更新回滚。
+        if (replaceAvatar) {
+            baseMapper.updateAvatar(user.getId(), avatarId);
+            if (previous.getAvatarFileId() != null) fileBindings.release(previous.getAvatarFileId(), "USER_AVATAR", user.getId());
+        }
+        user.setAvatarFileId(avatarId);
 
-        // 禁用账号后踢掉该用户所有设备
+        // 5.禁用账号后撤销所有设备会话，授权变更与数据库提交保持一致。
         if (needKick) {
             this.kickUser(user.getId());
         }
     }
 
+    /** 删除用户及关联数据，并在业务事务中释放头像文件，不执行物理字节删除。 */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void delete(Set<Long> ids) {
@@ -116,15 +155,23 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             return;
         }
 
+        // 1.依次取得授权协调锁、用户行锁及头像文件行锁，避免与并发替换交错。
         sessionCoordinator.lockForChange();
         superAdminGuard.checkUsers(ids);
+        var previousUsers = ids.stream().sorted().map(this::getByIdForUpdate).filter(Objects::nonNull).toList();
+        fileBindings.lockFiles(previousUsers.stream().map(SysUser::getAvatarFileId)
+                .filter(Objects::nonNull).collect(Collectors.toSet()));
         sessionCoordinator.revokeUsers(ids);
 
-        // 删除用户角色、部门关联
+        // 2.撤销会话并删除角色、部门关联，为用户逻辑删除保持业务完整性。
         userRoleService.deleteByUserIds(ids);
         userDeptService.deleteByUserIds(ids);
 
+        // 3.先删除真实用户引用，再释放头像文件；文件变更随业务事务共同回滚。
         super.removeByIds(ids);
+        for (var user : previousUsers) {
+            if (user.getAvatarFileId() != null) fileBindings.release(user.getAvatarFileId(), "USER_AVATAR", user.getId());
+        }
     }
 
     @Override

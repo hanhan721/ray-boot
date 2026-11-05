@@ -72,6 +72,8 @@ ray:
         - admin                # 可配置多个超管角色
   storage:
     storage-type: RUST_FS      # 存储类型：LOCAL / RUST_FS
+    upload-concurrency: 8      # 每实例最多同时处理的上传，超出立即返回可重试错误
+    operation-timeout: 2m      # 存储操作超时，合法范围大于0且不超过10分钟
     local:
       base-path: ./uploads     # 本地存储根目录
     access:

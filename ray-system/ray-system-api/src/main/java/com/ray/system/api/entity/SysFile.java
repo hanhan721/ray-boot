@@ -2,72 +2,24 @@ package com.ray.system.api.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.ray.common.mybatis.entity.BaseEntity;
-import com.ray.common.storage.enums.StorageType;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
+import java.time.LocalDateTime;
 
-import java.io.Serial;
-
-/**
- * 文件实体
- */
+/** 逻辑文件。只允许通过文件发布、绑定和删除服务修改。 */
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
 @TableName("sys_file")
 public class SysFile extends BaseEntity<SysFile> {
-
-    @Serial
-    private static final long serialVersionUID = 1L;
-
-    /**
-     * 原始文件名
-     */
+    /** 多个逻辑文件可共享同一物理对象，大小、MIME 和 hash 不在此重复保存。 */
+    private Long objectId;
     private String originalName;
-
-    /**
-     * 存储文件名（UUID.ext）
-     */
-    private String fileName;
-
-    /**
-     * 存储路径（相对路径）
-     */
-    private String filePath;
-
-    /**
-     * 文件扩展名（不含点号）
-     */
     private String fileExt;
-
-    /**
-     * 文件大小（字节）
-     */
-    private Long fileSize;
-
-    /**
-     * MIME 类型
-     */
-    private String contentType;
-
-    /**
-     * 存储类型
-     */
-    private StorageType storageType;
-
-    /**
-     * 存储桶（MinIO 使用）
-     */
-    private String bucket;
-
-    /**
-     * 业务类型
-     */
+    /** 与 bizId 同时为空表示未绑定；绑定或解绑须参加对应业务事务。 */
     private String bizType;
-
-    /**
-     * 业务关联 ID
-     */
     private Long bizId;
+    /** 逻辑删除不可恢复；此时间不代表物理字节已被回收。 */
+    private LocalDateTime deletedAt;
 }

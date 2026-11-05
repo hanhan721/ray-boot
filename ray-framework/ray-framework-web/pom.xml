@@ -16,6 +16,10 @@
     <description>Web 框架模块 - MVC 配置、全局异常处理、API 文档</description>
 
     <dependencies>
+        <dependency>
+            <groupId>com.ray</groupId>
+            <artifactId>ray-common-storage</artifactId>
+        </dependency>
         <!-- Common 模块 -->
         <dependency>
             <groupId>com.ray</groupId>

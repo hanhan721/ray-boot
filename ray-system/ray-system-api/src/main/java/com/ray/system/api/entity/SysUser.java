@@ -3,6 +3,8 @@ package com.ray.system.api.entity;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.ray.common.mybatis.entity.BaseEntity;
+import com.ray.common.storage.annotation.StorageFile;
+import com.ray.common.storage.annotation.AccessLevel;
 import com.ray.system.api.enums.Gender;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -62,7 +64,8 @@ public class SysUser extends BaseEntity<SysUser> {
     /**
      * 头像
      */
-    private String avatar;
+    @StorageFile(level = AccessLevel.PROTECTED)
+    private Long avatarFileId;
 
     /**
      * 性别

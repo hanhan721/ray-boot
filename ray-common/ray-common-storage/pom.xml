@@ -16,6 +16,11 @@
     <description>存储公共模块 - 存储抽象、本地存储、RustFS 存储实现</description>
 
     <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Common Core -->
         <dependency>
             <groupId>com.ray</groupId>

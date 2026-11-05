@@ -2,165 +2,59 @@ package com.ray.common.storage.jackson;
 
 import com.ray.common.storage.annotation.AccessLevel;
 import com.ray.common.storage.annotation.StorageFile;
-import com.ray.common.storage.service.FileNameResolver;
-import com.ray.common.storage.storage.StorageService;
-import com.ray.common.valkey.util.ValkeyUtils;
-import org.springframework.beans.factory.ObjectProvider;
+import com.ray.common.storage.service.FileResponseResolver.FileView;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.databind.BeanProperty;
 import tools.jackson.databind.SerializationContext;
 import tools.jackson.databind.ValueSerializer;
-import tools.jackson.databind.ser.std.StdScalarSerializer;
-
-import java.time.Duration;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Jackson 序列化器：存储 key 自动转结构化文件信息 {path, url, name}
- */
-public class StorageFileSerializer extends StdScalarSerializer<String> {
-
-    private static final String NAME_CACHE_PREFIX = "storage:name:";
-    private static final Duration NAME_CACHE_TTL = Duration.ofDays(7);
-
-    private final StorageService storageService;
-    private final ValkeyUtils valkeyUtils;
-    private final ObjectProvider<FileNameResolver> fileNameResolverProvider;
+/** 仅消费响应预扫描结果，序列化时不发起查询或签名。 */
+public class StorageFileSerializer extends ValueSerializer<Object> {
+    public static final String CACHE_ATTRIBUTE = "com.ray.storage.files";
     private final AccessLevel level;
-    private final boolean multiple;
-    private final boolean resolveName;
+    public StorageFileSerializer() { this(AccessLevel.PRIVATE); }
+    private StorageFileSerializer(AccessLevel level) { this.level = level; }
 
-    /** 无参构造器：降级用 */
-    public StorageFileSerializer() {
-        this(null, null, null, AccessLevel.PRIVATE, false, false);
-    }
-
-    /**
-     * Bean 注册构造器：接收 ObjectProvider 延迟解析 FileNameResolver，
-     * 避免自动配置类执行时 FileNameResolver 实现尚未注册
-     */
-    public StorageFileSerializer(StorageService storageService, ValkeyUtils valkeyUtils,
-                                 ObjectProvider<FileNameResolver> fileNameResolverProvider) {
-        this(storageService, valkeyUtils, fileNameResolverProvider, AccessLevel.PRIVATE, false, false);
-    }
-
-    private StorageFileSerializer(StorageService storageService, ValkeyUtils valkeyUtils,
-                                  ObjectProvider<FileNameResolver> fileNameResolverProvider,
-                                  AccessLevel level, boolean multiple, boolean resolveName) {
-        super(String.class);
-        this.storageService = storageService;
-        this.valkeyUtils = valkeyUtils;
-        this.fileNameResolverProvider = fileNameResolverProvider;
-        this.level = level;
-        this.multiple = multiple;
-        this.resolveName = resolveName;
-    }
-
+    /** 读取字段声明的寿命档位，创建字段级序列化器，避免不同字段共享可变状态。 */
     @Override
-    public ValueSerializer<?> createContextual(SerializationContext ctxt, BeanProperty property) {
-        if (property != null) {
-            StorageFile annotation = property.getAnnotation(StorageFile.class);
-            if (annotation != null && (annotation.level() != this.level
-                    || annotation.multiple() != this.multiple
-                    || annotation.resolveName() != this.resolveName)) {
-                return new StorageFileSerializer(this.storageService, this.valkeyUtils,
-                        this.fileNameResolverProvider, annotation.level(), annotation.multiple(),
-                        annotation.resolveName());
-            }
-        }
-        return this;
+    public ValueSerializer<?> createContextual(SerializationContext context, BeanProperty property) {
+        var annotation = property == null ? null : property.getAnnotation(StorageFile.class);
+        return annotation == null ? this : new StorageFileSerializer(annotation.level());
     }
 
+    /** 按原有单值或列表结构输出文件信息，列表顺序与输入文件 ID 顺序一致。 */
     @Override
-    public void serialize(String value, JsonGenerator gen, SerializationContext ctxt) {
-        if (value == null || value.isBlank()) {
-            gen.writeNull();
-            return;
-        }
-        if (this.multiple) {
-            List<String> keys = splitKeys(value);
-            if (this.resolveName) {
-                preloadNames(keys);
-            }
+    public void serialize(Object value, JsonGenerator gen, SerializationContext context) {
+        if (value instanceof List<?> ids) {
             gen.writeStartArray();
-            for (String key : keys) {
-                writeFileInfo(gen, key);
-            }
+            for (var id : ids) this.write(id, gen, context);
             gen.writeEndArray();
         } else {
-            writeFileInfo(gen, value.trim());
+            this.write(value, gen, context);
         }
     }
 
-    private void writeFileInfo(JsonGenerator gen, String key) {
+    /** 从当前响应预加载缓存读取单个文件；未解析到的 ID 输出 null，不降级查询或泄露 key。 */
+    private void write(Object value, JsonGenerator gen, SerializationContext context) {
+        // 1.只接受 Long 文件 ID，拒绝旧路径字符串及其他不符合注解契约的类型。
+        if (!(value instanceof Long id)) {
+            if (value == null) { gen.writeNull(); return; }
+            throw new IllegalArgumentException("@StorageFile 仅支持 Long / List<Long>");
+        }
+        // 2.按字段寿命档位和文件 ID 读取本次响应缓存，权限过滤已在预扫描阶段完成。
+        var attribute = context.getAttribute(CACHE_ATTRIBUTE);
+        var levels = attribute instanceof Map<?, ?> map ? map : Map.of();
+        var entries = levels.get(level) instanceof Map<?, ?> map ? map : Map.of();
+        if (!(entries.get(id) instanceof FileView(Long fileId, String name, String url, String ext, long size))) { gen.writeNull(); return; }
+        // 3.只输出对外约定字段，不输出 hash、bucket 或对象 key。
         gen.writeStartObject();
-        gen.writeName("path");
-        gen.writeString(key);
-        gen.writeName("url");
-        gen.writeString(resolveUrl(key));
-        if (this.resolveName) {
-            gen.writeName("name");
-            String name = doResolveName(key);
-            if (name != null) {
-                gen.writeString(name);
-            } else {
-                gen.writeNull();
-            }
-        }
+        gen.writeNumberProperty("fileId", fileId);
+        gen.writeStringProperty("name", name);
+        gen.writeStringProperty("url", url);
+        gen.writeStringProperty("ext", ext);
+        gen.writeNumberProperty("size", size);
         gen.writeEndObject();
-    }
-
-    private String resolveUrl(String key) {
-        if (storageService == null) {
-            return key;
-        }
-        return storageService.getAccessUrl(storageService.getBucket(), key, level.getDuration());
-    }
-
-    private String doResolveName(String key) {
-        if (valkeyUtils != null) {
-            String cached = valkeyUtils.get(NAME_CACHE_PREFIX + key, String.class);
-            if (cached != null) {
-                return cached;
-            }
-        }
-        FileNameResolver resolver = getFileNameResolver();
-        if (resolver == null) {
-            return null;
-        }
-        Map<String, String> result = resolver.resolve(List.of(key));
-        String name = result.get(key);
-        if (name != null && valkeyUtils != null) {
-            valkeyUtils.set(NAME_CACHE_PREFIX + key, name, NAME_CACHE_TTL.getSeconds());
-        }
-        return name;
-    }
-
-    private void preloadNames(List<String> keys) {
-        FileNameResolver resolver = getFileNameResolver();
-        if (resolver == null || valkeyUtils == null) {
-            return;
-        }
-        List<String> missing = keys.stream()
-                .filter(k -> valkeyUtils.get(NAME_CACHE_PREFIX + k, String.class) == null)
-                .toList();
-        if (missing.isEmpty()) {
-            return;
-        }
-        Map<String, String> names = resolver.resolve(missing);
-        names.forEach((k, v) -> valkeyUtils.set(NAME_CACHE_PREFIX + k, v, NAME_CACHE_TTL.getSeconds()));
-    }
-
-    private FileNameResolver getFileNameResolver() {
-        return fileNameResolverProvider != null ? fileNameResolverProvider.getIfAvailable() : null;
-    }
-
-    private List<String> splitKeys(String value) {
-        return Arrays.stream(value.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .toList();
     }
 }

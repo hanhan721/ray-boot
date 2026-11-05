@@ -9,7 +9,7 @@ CREATE TABLE sys_user (
     nickname        VARCHAR(50),                                            -- 昵称
     email           VARCHAR(100),                                           -- 邮箱
     phone           VARCHAR(20),                                            -- 手机号
-    avatar          VARCHAR(255),                                           -- 头像
+    avatar_file_id  BIGINT REFERENCES sys_file(id) ON DELETE RESTRICT,       -- 头像逻辑文件
     gender          gender          NOT NULL DEFAULT 'SECRET',              -- 性别
     enabled         BOOLEAN         NOT NULL DEFAULT TRUE,                  -- 是否启用
     remark          VARCHAR(500),                                           -- 备注

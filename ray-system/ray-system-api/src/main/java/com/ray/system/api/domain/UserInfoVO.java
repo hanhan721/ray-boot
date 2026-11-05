@@ -13,7 +13,7 @@ import java.util.Set;
  * @param userId      用户 ID
  * @param username    用户名
  * @param nickname    昵称
- * @param avatar      头像
+ * @param avatarFileId 头像文件 ID
  * @param roles       角色标识集合
  * @param menus       菜单权限树（前端动态路由）
  * @param permissions 权限编码集合（接口权限校验）
@@ -23,7 +23,7 @@ public record UserInfoVO(
         String username,
         String nickname,
         @StorageFile(level = AccessLevel.PROTECTED)
-        String avatar,
+        Long avatarFileId,
         Set<String> roles,
         List<SysPermission> menus,
         Set<String> permissions

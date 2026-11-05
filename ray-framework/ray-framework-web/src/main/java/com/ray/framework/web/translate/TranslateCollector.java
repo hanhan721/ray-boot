@@ -11,6 +11,11 @@ import com.ray.common.core.translate.TranslateMetaResolver;
 import com.ray.common.core.translate.Translator;
 import com.ray.common.security.annotation.FieldPermission;
 import com.ray.common.security.evaluator.PermissionEvaluator;
+import com.ray.common.storage.annotation.AccessLevel;
+import com.ray.common.storage.annotation.StorageFile;
+import com.ray.common.storage.service.FileResponseResolver;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 
@@ -26,45 +31,69 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 递归扫描响应对象，收集所有 {@code @Translate} 字段的原始 key，
- * 按 Translator 分组发起批量查询，产出 {@link TranslateKey} → 翻译文本的映射。
+ * 复用响应对象扫描，同时收集翻译 key 与 {@code @StorageFile} 文件 ID。
+ * 先按字段权限过滤，再分组批量解析，产出仅用于当前响应序列化的缓存。
  */
 @Component
 public class TranslateCollector {
 
     private final TranslateRegistry registry;
     private final PermissionEvaluator permissionEvaluator;
+    private final ObjectProvider<FileResponseResolver> fileResolver;
 
     public TranslateCollector(TranslateRegistry registry, PermissionEvaluator permissionEvaluator) {
+        this(registry, permissionEvaluator, null);
+    }
+
+    @Autowired
+    public TranslateCollector(TranslateRegistry registry, PermissionEvaluator permissionEvaluator,
+                              ObjectProvider<FileResponseResolver> fileResolver) {
         this.registry = registry;
         this.permissionEvaluator = permissionEvaluator;
+        this.fileResolver = fileResolver;
     }
 
     /**
      * @return 空 Map 表示无需翻译或无可翻译字段；否则为查询好的翻译缓存。
      */
     public Map<TranslateKey, String> collect(Object root) {
+        return this.collectResponse(root, true).translations();
+    }
+
+    /**
+     * 单次遍历响应对象图，按翻译元数据和文件寿命档位去重后批量查询。
+     * translate 只控制字段翻译，文件解析仍执行；禁止进入无权限字段及其嵌套对象。
+     */
+    public ResponseCache collectResponse(Object root, boolean translate) {
+        // 1.初始化本次响应的分组、权限结果和对象身份集合，避免循环引用重复扫描。
         if (root == null) {
-            return Map.of();
+            return new ResponseCache(Map.of(), Map.of());
         }
         Map<String, Group> groups = new HashMap<>();
+        Map<AccessLevel, Set<Long>> fileGroups = new HashMap<>();
         Map<String, Boolean> permissionCache = new HashMap<>();
         Set<Object> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         Deque<Object> stack = new ArrayDeque<>();
         stack.push(root);
 
+        // 2.以显式栈遍历响应对象图，统一收集可见翻译字段和文件 ID。
         while (!stack.isEmpty()) {
             Object current = stack.pop();
             if (current == null || !visited.add(current)) {
                 continue;
             }
-            traverse(current, groups, stack, permissionCache);
+            this.traverse(current, groups, stack, permissionCache, fileGroups, translate);
         }
 
-        if (groups.isEmpty()) {
-            return Map.of();
+        // 3.按寿命档位批量解析去重文件 ID，序列化阶段不再逐字段查库或签名。
+        Map<AccessLevel, Map<Long, FileResponseResolver.FileView>> fileCache = new HashMap<>();
+        if (!fileGroups.isEmpty()) {
+            var resolver = fileResolver == null ? null : fileResolver.getIfAvailable();
+            if (resolver == null) throw new IllegalStateException("缺少文件解析服务");
+            fileGroups.forEach((level, ids) -> fileCache.put(level, resolver.resolve(ids, level)));
         }
 
+        // 4.按翻译类型与元数据批量查询文本，与文件解析结果一起返回。
         Map<TranslateKey, String> cache = new HashMap<>();
         for (Group group : groups.values()) {
             if (group.keys.isEmpty()) {
@@ -83,11 +112,14 @@ public class TranslateCollector {
                 cache.put(new TranslateKey(group.meta.type(), metaKey, entry.getKey()), entry.getValue());
             }
         }
-        return cache;
+        return new ResponseCache(cache, fileCache);
     }
 
+    /** 展开响应容器，再扫描业务对象的可见字段；子对象交由外层栈统一遍历和去重。 */
     private void traverse(Object current, Map<String, Group> groups, Deque<Object> stack,
-                          Map<String, Boolean> permissionCache) {
+                          Map<String, Boolean> permissionCache, Map<AccessLevel, Set<Long>> fileGroups,
+                          boolean translate) {
+        // 1.展开统一响应、分页、集合、数组及 Map，避免将容器内部实现字段当作业务字段。
         if (current instanceof R<?> response) {
             Object data = response.getData();
             if (data != null) {
@@ -131,11 +163,31 @@ public class TranslateCollector {
             return;
         }
 
+        // 2.先检查字段权限，再按寿命档位收集 Long / List<Long> 文件 ID。
+        for (Field field : FileFields.CACHE.get(current.getClass())) {
+            if (!this.canCollect(current.getClass(), field.getName(), permissionCache)) continue;
+            try {
+                var value = field.get(current);
+                if (value == null) continue;
+                var ids = fileGroups.computeIfAbsent(field.getAnnotation(StorageFile.class).level(), _ -> new HashSet<>());
+                if (value instanceof Long id) ids.add(id);
+                else if (value instanceof List<?> list) {
+                    for (var item : list) {
+                        if (item instanceof Long id) ids.add(id);
+                        else if (item != null) throw new IllegalArgumentException("@StorageFile 需要 List<Long>");
+                    }
+                } else throw new IllegalArgumentException("@StorageFile 需要 Long / List<Long>");
+            } catch (IllegalAccessException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+        // 3.仅在接口启用翻译时收集翻译 key，仍复用同一份字段权限结果。
         TranslateClassMeta classMeta = TranslateMetaResolver.resolve(current.getClass());
         if (classMeta.isEmpty()) {
             return;
         }
         for (TranslateField field : classMeta.translateFields()) {
+            if (!translate) continue;
             if (!canCollect(current.getClass(), field.sourceFieldName(), permissionCache)) {
                 continue;
             }
@@ -147,7 +199,7 @@ public class TranslateCollector {
             String groupKey = meta.type() + "::" + TranslateKey.metaKeyOf(meta);
             groups.computeIfAbsent(groupKey, k -> new Group(meta)).keys.add(key);
         }
-        // 深入嵌套字段，覆盖单嵌套对象 / 嵌套集合场景
+        // 4.通过权限检查的嵌套字段才入栈，阻止受保护对象内触发文件或翻译查询。
         for (NestedGetter nested : classMeta.nestedGetters()) {
             if (!canCollect(current.getClass(), nested.fieldName(), permissionCache)) {
                 continue;
@@ -159,6 +211,32 @@ public class TranslateCollector {
         }
     }
 
+    /** 当前响应的查询结果快照，经 ObjectWriter attribute 传给字段序列化器。 */
+    public record ResponseCache(Map<TranslateKey, String> translations,
+            Map<AccessLevel, Map<Long, FileResponseResolver.FileView>> files) { }
+
+    /** 按类缓存文件注解字段，只保存结构元数据，不保存用户权限或响应数据。 */
+    private static final class FileFields {
+        static final ClassValue<List<Field>> CACHE = new ClassValue<>() {
+            @Override
+            protected List<Field> computeValue(Class<?> type) {
+                if (type.getName().startsWith("java.") || type.getName().startsWith("org.springframework.")
+                        || type.getName().startsWith("com.baomidou.")) return List.of();
+                var fields = new java.util.ArrayList<Field>();
+                for (var cls = type; cls != null && cls != Object.class; cls = cls.getSuperclass()) {
+                    for (var field : cls.getDeclaredFields()) {
+                        if (java.lang.reflect.Modifier.isStatic(field.getModifiers())
+                                || field.getAnnotation(StorageFile.class) == null) continue;
+                        field.setAccessible(true);
+                        fields.add(field);
+                    }
+                }
+                return List.copyOf(fields);
+            }
+        };
+    }
+
+    /** 共享字段权限判断结果，保证预扫描过滤与最终 JSON 字段权限控制保持一致。 */
     private boolean canCollect(Class<?> beanClass, String sourceFieldName, Map<String, Boolean> permissionCache) {
         String permission = FieldPermissionCache.get(beanClass, sourceFieldName);
         if (permission == null) {

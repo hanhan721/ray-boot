@@ -131,6 +131,7 @@ FROM (VALUES
     (10802, 100, '文件下载', 'system:file:download', 2),
     (10803, 100, '文件查询详情', 'system:file:query', 3),
     (10804, 100, '文件删除', 'system:file:remove', 4),
+    (10805, 100, '文件绑定管理', 'system:file:manage', 5),
     (10901, 100, '操作日志查询列表', 'system:oper-log:list', 1),
     (10902, 100, '操作日志查询详情', 'system:oper-log:query', 2),
     (10903, 100, '操作日志清理', 'system:oper-log:clean', 3),
@@ -145,3 +146,8 @@ FROM (VALUES
     (20102, 200, '任务日志查询详情', 'schedule:job-log:query', 2),
     (20103, 200, '任务日志清理', 'schedule:job-log:clean', 3)
 ) AS permissions(id, parent_id, name, code, sort);
+
+-- 默认按应用时区每日凌晨执行；周日附加孤儿扫描。
+INSERT INTO sys_job (id, job_name, job_group, bean_name, method_name, cron_expression, enabled, remark)
+VALUES (9001, '文件生命周期清理', 'SYSTEM', 'fileCleanupTask', 'execute', '0 0 3 * * *', TRUE,
+        '逻辑删除不可恢复；未绑定24小时、零引用3天、孤儿7天');

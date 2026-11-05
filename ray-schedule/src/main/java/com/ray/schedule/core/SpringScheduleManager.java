@@ -16,9 +16,10 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Spring 原生动态调度管理器
@@ -37,8 +38,9 @@ public class SpringScheduleManager {
 
     /** 已调度的任务 Future */
     private final Map<Long, ScheduledFuture<?>> scheduledFutures = new ConcurrentHashMap<>();
-    /** 并发控制标志（concurrent=false 的任务使用） */
-    private final Map<Long, AtomicBoolean> runningFlags = new ConcurrentHashMap<>();
+    /** 仅记录在途的非并发任务，取消或重排 Future 时不释放执行资格。 */
+    private final Set<Long> runningJobs = ConcurrentHashMap.newKeySet();
+    private boolean stopping;
 
     public SpringScheduleManager(ApplicationContext applicationContext) {
         this.applicationContext = applicationContext;
@@ -53,12 +55,16 @@ public class SpringScheduleManager {
     /**
      * 注册并启动定时任务
      */
-    public void schedule(SysJob job) {
-        validateWhitelist(job.getBeanName());
-        cancel(job.getId());
-        Runnable task = createTaskRunnable(job);
-        var future = taskScheduler.schedule(task, new CronTrigger(job.getCronExpression()));
-        scheduledFutures.put(job.getId(), future);
+    public synchronized void schedule(SysJob job) {
+        this.checkRunning();
+        this.validateWhitelist(job.getBeanName());
+        var trigger = new CronTrigger(job.getCronExpression());
+        this.cancel(job.getId());
+        Runnable task = this.createTaskRunnable(job);
+        var future = taskScheduler.schedule(task, trigger);
+        if (future != null) {
+            scheduledFutures.put(job.getId(), future);
+        }
     }
 
     /**
@@ -71,36 +77,43 @@ public class SpringScheduleManager {
     /**
      * 取消任务（删除或禁用时调用）
      */
-    public void cancel(Long jobId) {
+    public synchronized void cancel(Long jobId) {
         var future = scheduledFutures.remove(jobId);
         if (future != null) {
             future.cancel(false);
         }
-        runningFlags.remove(jobId);
     }
 
     /**
      * 立即触发一次（不影响正常调度）
      */
-    public void triggerNow(SysJob job) {
-        validateWhitelist(job.getBeanName());
-        taskScheduler.execute(createTaskRunnable(job));
+    public synchronized void triggerNow(SysJob job) {
+        this.checkRunning();
+        this.validateWhitelist(job.getBeanName());
+        taskScheduler.execute(this.createTaskRunnable(job));
     }
 
     /**
      * 取消所有任务（全量重建前调用）
      */
-    public void cancelAll() {
+    public synchronized void cancelAll() {
         scheduledFutures.forEach((id, future) -> future.cancel(false));
         scheduledFutures.clear();
-        runningFlags.clear();
     }
 
     @PreDestroy
     public void shutdown() {
+        synchronized (this) {
+            stopping = true;
+        }
         taskScheduler.shutdown();
         scheduledFutures.clear();
-        runningFlags.clear();
+    }
+
+    private void checkRunning() {
+        if (stopping) {
+            throw new RejectedExecutionException("调度器正在关闭，拒绝注册或触发任务");
+        }
     }
 
     /**
@@ -122,12 +135,9 @@ public class SpringScheduleManager {
 
         return () -> {
             // 并发控制：非并发任务在前一次未完成时跳过
-            if (!concurrent) {
-                var running = runningFlags.computeIfAbsent(jobId, _ -> new AtomicBoolean(false));
-                if (!running.compareAndSet(false, true)) {
-                    log.debug("任务 [{}] 禁止并发执行，跳过本次触发", jobName);
-                    return;
-                }
+            if (!concurrent && !runningJobs.add(jobId)) {
+                log.debug("任务 [{}] 禁止并发执行，跳过本次触发", jobName);
+                return;
             }
 
             var jobLog = new SysJobLog()
@@ -156,12 +166,11 @@ public class SpringScheduleManager {
                 jobLog.setStartTime(startTime)
                         .setEndTime(LocalDateTime.now())
                         .setCostTime((int) (System.currentTimeMillis() - beginMs));
-                applicationContext.publishEvent(new JobLogEvent(jobLog));
-
-                if (!concurrent) {
-                    var running = runningFlags.get(jobId);
-                    if (running != null) {
-                        running.set(false);
+                try {
+                    applicationContext.publishEvent(new JobLogEvent(jobLog));
+                } finally {
+                    if (!concurrent) {
+                        runningJobs.remove(jobId);
                     }
                 }
             }

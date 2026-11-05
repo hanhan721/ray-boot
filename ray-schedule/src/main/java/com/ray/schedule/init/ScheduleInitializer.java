@@ -1,6 +1,8 @@
 package com.ray.schedule.init;
 
-import com.ray.schedule.core.SpringScheduleManager;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ray.schedule.core.ScheduleSync;
+import com.ray.schedule.entity.SysJob;
 import com.ray.schedule.mapper.JobMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,30 +19,13 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ScheduleInitializer implements ApplicationRunner {
 
-    private final SpringScheduleManager scheduleManager;
+    private final ScheduleSync scheduleSync;
     private final JobMapper jobMapper;
 
     @Override
     public void run(@NonNull ApplicationArguments args) {
-        var jobs = jobMapper.selectList(null);
-
-        int registered = 0, skipped = 0, failed = 0;
-
-        for (var job : jobs) {
-            if (!Boolean.TRUE.equals(job.getEnabled())) {
-                skipped++;
-                continue;
-            }
-            try {
-                scheduleManager.schedule(job);
-                registered++;
-            } catch (Exception e) {
-                failed++;
-                log.error("注册定时任务失败: {} - {}", job.getJobName(), e.getMessage(), e);
-            }
-        }
-
-        log.info("定时任务加载完成: 注册 {} 个, 跳过(禁用) {} 个, 失败 {} 个",
-                registered, skipped, failed);
+        var jobs = jobMapper.selectList(new LambdaQueryWrapper<SysJob>().select(SysJob::getId));
+        scheduleSync.alignOnStartup(jobs.stream().map(SysJob::getId).toList());
+        log.info("定时任务启动对齐已提交，共 {} 个任务；执行结果以对齐日志为准", jobs.size());
     }
 }

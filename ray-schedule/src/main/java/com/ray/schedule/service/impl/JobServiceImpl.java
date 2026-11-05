@@ -6,6 +6,7 @@ import com.ray.common.core.exception.BusinessException;
 import com.ray.common.core.util.AssertUtils;
 import com.ray.common.mybatis.util.PageUtils;
 import com.ray.common.mybatis.util.QueryWrapperHelper;
+import com.ray.schedule.core.ScheduleSync;
 import com.ray.schedule.core.SpringScheduleManager;
 import com.ray.common.core.annotation.ScheduleTask;
 import com.ray.schedule.domain.JobPageQuery;
@@ -31,6 +32,7 @@ import java.util.Set;
 public class JobServiceImpl extends ServiceImpl<JobMapper, SysJob> implements JobService {
 
     private final SpringScheduleManager scheduleManager;
+    private final ScheduleSync scheduleSync;
     private final ApplicationContext applicationContext;
 
     @Override
@@ -44,9 +46,7 @@ public class JobServiceImpl extends ServiceImpl<JobMapper, SysJob> implements Jo
         this.validateBeanAndMethod(job);
         this.validateCronExpression(job.getCronExpression());
         super.save(job);
-        if (Boolean.TRUE.equals(job.getEnabled())) {
-            scheduleManager.schedule(job);
-        }
+        scheduleSync.alignAfterCommit(List.of(job.getId()));
     }
 
     @Override
@@ -58,11 +58,7 @@ public class JobServiceImpl extends ServiceImpl<JobMapper, SysJob> implements Jo
         this.validateBeanAndMethod(job);
         this.validateCronExpression(job.getCronExpression());
         super.updateById(job);
-        if (Boolean.TRUE.equals(job.getEnabled())) {
-            scheduleManager.reschedule(job);
-        } else {
-            scheduleManager.cancel(job.getId());
-        }
+        scheduleSync.alignAfterCommit(List.of(job.getId()));
     }
 
     @Override
@@ -71,10 +67,8 @@ public class JobServiceImpl extends ServiceImpl<JobMapper, SysJob> implements Jo
         if (ids == null || ids.isEmpty()) {
             return;
         }
-        for (var id : ids) {
-            scheduleManager.cancel(id);
-        }
         super.removeByIds(ids);
+        scheduleSync.alignAfterCommit(ids);
     }
 
     @Override
@@ -84,7 +78,7 @@ public class JobServiceImpl extends ServiceImpl<JobMapper, SysJob> implements Jo
         AssertUtils.notNull(job, "任务不存在");
         job.setEnabled(false);
         super.updateById(job);
-        scheduleManager.cancel(id);
+        scheduleSync.alignAfterCommit(List.of(id));
     }
 
     @Override
@@ -94,7 +88,7 @@ public class JobServiceImpl extends ServiceImpl<JobMapper, SysJob> implements Jo
         AssertUtils.notNull(job, "任务不存在");
         job.setEnabled(true);
         super.updateById(job);
-        scheduleManager.schedule(job);
+        scheduleSync.alignAfterCommit(List.of(id));
     }
 
     @Override

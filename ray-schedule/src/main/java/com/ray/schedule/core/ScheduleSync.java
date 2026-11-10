@@ -3,6 +3,7 @@ package com.ray.schedule.core;
 import com.ray.schedule.mapper.JobMapper;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -23,7 +24,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Component
-public class ScheduleSync {
+public class ScheduleSync implements SmartLifecycle {
 
     private static final int QUEUE_CAPACITY = 1024;
     private static final int SHUTDOWN_TIMEOUT_SECONDS = 30;
@@ -102,18 +103,59 @@ public class ScheduleSync {
         }
     }
 
-    /** 依赖关系保证本工作器先于调度器和数据源销毁，尽量处理完已提交的通知。 */
+    @Override
+    public void start() {
+        // 工作器在构造时初始化；不参与暂停后的重启。
+    }
+
+    @Override
+    public boolean isPauseable() {
+        return false;
+    }
+
+    @Override
+    public boolean isRunning() {
+        return !worker.isTerminated();
+    }
+
+    @Override
+    public int getPhase() {
+        return scheduleManager.getPhase();
+    }
+
+    @Override
+    public void stop() {
+        this.shutdown();
+    }
+
+    /** 依赖关系保证先排空已提交的通知，再停止调度器和数据源。 */
     @PreDestroy
     public void shutdown() {
         worker.shutdown();
+        boolean interrupted = false;
         try {
-            if (!worker.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                var discarded = worker.shutdownNow();
-                log.warn("调度对齐工作器停止超时，丢弃 {} 批通知；重启后将重新按库加载", discarded.size());
+            try {
+                if (worker.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                    return;
+                }
+            } catch (InterruptedException e) {
+                interrupted = true;
             }
-        } catch (InterruptedException e) {
-            worker.shutdownNow();
-            Thread.currentThread().interrupt();
+            var discarded = worker.shutdownNow();
+            log.warn("调度对齐工作器中断，丢弃 {} 批通知；重启后将重新按库加载", discarded.size());
+            while (!worker.isTerminated()) {
+                try {
+                    if (!worker.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                        log.error("调度对齐工作器尚未退出，继续等待并保留依赖资源");
+                    }
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 }

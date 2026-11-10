@@ -23,8 +23,15 @@ public class OnlineSessionIndexTask {
     public void rebuild() {
         var prefix = AuthCacheConstants.SESSION_KEY_PREFIX;
         valkeyUtils.scanEach(prefix + "*", 200, keys -> {
+            // 停机中断后立即中止扫描，剩余会话下次手动执行时继续补齐。
+            if (Thread.currentThread().isInterrupted()) {
+                throw new IllegalStateException("停机中断，中止在线会话索引重建");
+            }
             var fields = valkeyUtils.pipelinedHMGet(keys, List.of(AuthCacheConstants.FIELD_LOGIN_TIME));
             for (int i = 0; i < keys.size(); i++) {
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new IllegalStateException("停机中断，中止在线会话索引重建");
+                }
                 var value = fields.get(i).get(AuthCacheConstants.FIELD_LOGIN_TIME);
                 if (value instanceof String time) {
                     try {

@@ -52,9 +52,11 @@ public class FileCleanupTask {
                     log.error("文件清理租约续期失败，停止领取新批次", e);
                 }
             }, 1, 1, TimeUnit.MINUTES);
-            // 4.执行分阶段清理，同时用单调时钟防止长时间暂停后沿用已过期租约。
+            // 4.执行分阶段清理。租约丢失、线程被中断或租约已过期时，停止领取新批次。
             var report = collector.run(policy, LocalDate.now().getDayOfWeek() == DayOfWeek.SUNDAY,
-                    () -> valid.get() && System.nanoTime() - renewedAt.get() < Duration.ofMinutes(5).toNanos());
+                    () -> valid.get()
+                            && !Thread.currentThread().isInterrupted()
+                            && System.nanoTime() - renewedAt.get() < Duration.ofMinutes(5).toNanos());
             log.info("文件清理完成: {}", report);
             return report.toString();
         } finally {

@@ -40,6 +40,7 @@ public class FileGarbageCollector {
             var batch = files.expired(after, cutoff);
             if (batch.isEmpty()) break;
             for (long id : batch) {
+                if (Thread.currentThread().isInterrupted()) return report;
                 try {
                     if (transactions.execute(() -> bindings.expire(id, cutoff))) report.expired++;
                 } catch (RuntimeException e) { this.failed(report, "未绑定文件/业务引用异常", id, e); }
@@ -52,6 +53,7 @@ public class FileGarbageCollector {
             var batch = objects.scan(after);
             if (batch.isEmpty()) break;
             for (var candidate : batch) {
+                if (Thread.currentThread().isInterrupted()) return report;
                 try {
                     var deleting = transactions.execute(() -> this.observe(candidate.getId(), policy, report));
                     if (deleting != null) this.purge(deleting, report);
@@ -144,6 +146,7 @@ public class FileGarbageCollector {
             // 2.流式取得至多 100 个候选，只处理修改时间早于阈值的对象。
             var page = storage.list(cursor);
             for (var item : page.objects()) {
+                if (Thread.currentThread().isInterrupted()) return;
                 if (!item.modifiedAt().isBefore(before)) continue;
                 try {
                     // 3.过滤仍有 AVAILABLE/DELETING 元数据的 key，删除前再查一次。

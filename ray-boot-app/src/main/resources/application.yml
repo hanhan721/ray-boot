@@ -85,6 +85,10 @@ ray:
       access-key: ${RUSTFS_ACCESS_KEY}
       secret-key: ${RUSTFS_SECRET_KEY}
       bucket: ${RUSTFS_BUCKET}
+  schedule:
+    shutdown-grace-seconds: 30       # 停机时等待在途任务优雅结束
+    shutdown-interrupt-seconds: 30   # 中断后每等待此秒数仍未退出则告警并继续等待
+    # 容器终止宽限期须覆盖任务实际收尾时间；不响应中断时不会提前关闭依赖资源
 
 # 加密配置
 crypto:

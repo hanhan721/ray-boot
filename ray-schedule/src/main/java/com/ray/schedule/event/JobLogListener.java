@@ -4,11 +4,10 @@ import com.ray.schedule.mapper.JobLogMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 /**
- * 任务执行日志事件监听器（异步）
+ * 在任务线程中写完执行日志，使调度停机等待覆盖日志收尾。
  */
 @Slf4j
 @Component
@@ -17,7 +16,6 @@ public class JobLogListener {
 
     private final JobLogMapper jobLogMapper;
 
-    @Async
     @EventListener
     public void onJobLog(JobLogEvent event) {
         try {

@@ -9,6 +9,7 @@ import com.ray.system.service.RefreshTokenService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -124,6 +125,7 @@ public class RefreshTokenServiceImpl extends ServiceImpl<RefreshTokenMapper, Ref
     }
 
     @Override
+    @Transactional(timeout = 15)
     public int cleanExpired() {
         var wrapper = Wrappers.<RefreshToken>lambdaQuery()
                 .lt(RefreshToken::getExpireTime, LocalDateTime.now());

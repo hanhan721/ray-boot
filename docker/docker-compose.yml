@@ -38,7 +38,7 @@ services:
       --maxmemory 256mb
       --maxmemory-policy allkeys-lru
       --tcp-keepalive 60
-      --timeout 300
+      --timeout 3600
       --save 3600 1
       --save 300 100
     volumes:

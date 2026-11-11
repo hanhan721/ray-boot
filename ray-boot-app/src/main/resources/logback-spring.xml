@@ -132,4 +132,9 @@
         </root>
     </springProfile>
 
+    <!-- Lettuce 空闲连接被服务端回收后的自动重连属于稳态行为，不写 INFO；
+         真实重连失败（Cannot reconnect / Disabling autoReconnect）仍以 WARN/ERROR 输出。 -->
+    <logger name="io.lettuce.core.protocol.ConnectionWatchdog" level="WARN"/>
+    <logger name="io.lettuce.core.protocol.ReconnectionHandler" level="WARN"/>
+
 </configuration>

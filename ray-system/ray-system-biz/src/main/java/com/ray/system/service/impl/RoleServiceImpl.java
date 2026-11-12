@@ -9,6 +9,7 @@ import com.ray.common.mybatis.util.QueryWrapperHelper;
 import com.ray.system.api.domain.RolePageQuery;
 import com.ray.system.api.entity.SysRole;
 import com.ray.system.api.entity.SysUserRole;
+import com.ray.system.api.reference.RoleReferenceChecker;
 import com.ray.system.mapper.RoleMapper;
 import com.ray.system.security.AuthorizationSessionCoordinator;
 import com.ray.system.security.SuperAdminGuard;
@@ -20,7 +21,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 角色 Service 实现
@@ -33,6 +36,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     private final AuthorizationSessionCoordinator sessionCoordinator;
     private final UserRoleService userRoleService;
     private final RolePermissionService rolePermissionService;
+    private final List<RoleReferenceChecker> roleReferenceCheckers;
 
     @Override
     public IPage<SysRole> page(RolePageQuery query) {
@@ -79,6 +83,10 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         }
         sessionCoordinator.lockForChange();
         superAdminGuard.checkRoles(ids);
+
+        // 业务模块仍引用候选角色时整批拒绝，检查先于会话撤销和关联删除。
+        this.checkRoleReferences(ids);
+
         sessionCoordinator.revokeRoleUsers(ids);
         userRoleService.remove(new LambdaQueryWrapper<SysUserRole>().in(SysUserRole::getRoleId, ids));
         rolePermissionService.deleteByRoleIds(ids);
@@ -111,5 +119,13 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
                 .eq(SysRole::getRoleKey, roleKey)
                 .ne(excludeId != null, SysRole::getId, excludeId);
         AssertUtils.isFalse(super.exists(wrapper), "角色标识已存在");
+    }
+
+    /** 业务模块引用候选角色时整批拒绝；检查器只读业务数据，异常随删除事务回滚。 */
+    private void checkRoleReferences(Set<Long> ids) {
+        var referenced = roleReferenceCheckers.stream()
+                .flatMap(checker -> checker.referencedRoleIds(ids).stream())
+                .collect(Collectors.toSet());
+        AssertUtils.isTrue(referenced.isEmpty(), "角色仍被业务引用: " + referenced);
     }
 }

@@ -6,6 +6,7 @@ import com.ray.common.core.domain.TreeNode;
 import com.ray.common.core.util.TreeUtils;
 import com.ray.common.core.util.AssertUtils;
 import com.ray.system.api.entity.SysDept;
+import com.ray.system.api.reference.DeptReferenceChecker;
 import com.ray.system.constant.SystemCacheConstants;
 import com.ray.system.mapper.DeptMapper;
 import com.ray.system.service.DeptService;
@@ -31,6 +32,7 @@ import java.util.stream.Collectors;
 public class DeptServiceImpl extends ServiceImpl<DeptMapper, SysDept> implements DeptService {
 
     private final UserDeptService userDeptService;
+    private final List<DeptReferenceChecker> deptReferenceCheckers;
 
     @Override
     public List<SysDept> listAll() {
@@ -106,6 +108,9 @@ public class DeptServiceImpl extends ServiceImpl<DeptMapper, SysDept> implements
         // 检查是否有用户关联
         AssertUtils.isFalse(userDeptService.existsByDeptIds(ids), "部门下存在用户，无法删除");
 
+        // 业务模块仍引用候选部门时整批拒绝，检查先于任何删除。
+        this.checkDeptReferences(ids);
+
         // 清理已逻辑删除用户留下的历史关联，避免关联表继续膨胀。
         userDeptService.deleteByDeptIds(ids);
 
@@ -166,5 +171,13 @@ public class DeptServiceImpl extends ServiceImpl<DeptMapper, SysDept> implements
             visited.add(current);
             current = parentMap.get(current);
         }
+    }
+
+    /** 业务模块引用候选部门时整批拒绝；检查器只读业务数据，异常随删除事务回滚。 */
+    private void checkDeptReferences(Set<Long> ids) {
+        var referenced = deptReferenceCheckers.stream()
+                .flatMap(checker -> checker.referencedDeptIds(ids).stream())
+                .collect(Collectors.toSet());
+        AssertUtils.isTrue(referenced.isEmpty(), "部门仍被业务引用: " + referenced);
     }
 }

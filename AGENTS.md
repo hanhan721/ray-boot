@@ -313,6 +313,13 @@ public class BizXxxReferenceChecker implements XxxReferenceChecker { ... }
 private List<XxxReferenceChecker> referenceCheckers;
 ```
 
+系统删除路径已按该规范内置检查接口（均定义在 `ray-system-api`，业务模块按需实现）：
+
+- `UserReferenceChecker` / `DeptReferenceChecker` / `RoleReferenceChecker` / `DictTypeReferenceChecker`：对应删除接口在删除前聚合全部实现，返回仍被引用的 id/编码即整批拒绝；无实现时行为不变
+- `FileReferenceChecker`：文件绑定与删除时核对真实业务引用
+
+业务表中的审计字段（`create_by`/`update_by`）不算引用，不应阻止对应记录删除。实现示例、判定标准与接入清单见 `docs/guides/business-module-integration.md`。
+
 ### 联表查询规范
 - **简单联表查询**: 使用 MyBatis-Plus-Join (MPJ)，无需写 XML
 - **复杂 SQL**: 涉及子查询、复杂聚合、动态表名等场景才写 XML

@@ -9,6 +9,7 @@ import com.ray.common.mybatis.util.QueryWrapperHelper;
 import com.ray.system.api.domain.UserDetailVO;
 import com.ray.system.api.domain.UserPageQuery;
 import com.ray.system.api.entity.SysUser;
+import com.ray.system.api.reference.UserReferenceChecker;
 import com.ray.system.mapper.UserMapper;
 import com.ray.system.security.AuthorizationSessionCoordinator;
 import com.ray.system.security.SuperAdminGuard;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
+import java.util.List;
 import java.util.Set;
 import java.util.Objects;
 import java.util.HashSet;
@@ -43,6 +45,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     private final AuthorizationSessionCoordinator sessionCoordinator;
     private final SuperAdminGuard superAdminGuard;
     private final FileBindings fileBindings;
+    private final List<UserReferenceChecker> userReferenceCheckers;
 
     @Override
     public IPage<SysUser> page(UserPageQuery query) {
@@ -159,6 +162,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         sessionCoordinator.lockForChange();
         superAdminGuard.checkUsers(ids);
         var previousUsers = ids.stream().sorted().map(this::getByIdForUpdate).filter(Objects::nonNull).toList();
+
+        // 业务模块仍引用候选用户时整批拒绝，检查先于会话撤销、关联删除和文件释放。
+        this.checkUserReferences(ids);
+
         fileBindings.lockFiles(previousUsers.stream().map(SysUser::getAvatarFileId)
                 .filter(Objects::nonNull).collect(Collectors.toSet()));
         sessionCoordinator.revokeUsers(ids);
@@ -265,5 +272,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     /** 撤销全部设备，数据库回滚时保留原会话。 */
     private void kickUser(Long userId) {
         sessionCoordinator.revokeUsers(Set.of(userId));
+    }
+
+    /** 业务模块引用候选用户时整批拒绝；检查器只读业务数据，异常随删除事务回滚。 */
+    private void checkUserReferences(Set<Long> ids) {
+        var referenced = userReferenceCheckers.stream()
+                .flatMap(checker -> checker.referencedUserIds(ids).stream())
+                .collect(Collectors.toSet());
+        AssertUtils.isTrue(referenced.isEmpty(), "用户仍被业务引用: " + referenced);
     }
 }

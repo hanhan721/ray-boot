@@ -4,18 +4,15 @@ Spring Boot 4.0.x 后台管理系统脚手架，三层架构（Controller-Servic
 
 ## 技术栈
 
-Java 25 | Spring Boot 4.0.x | Spring Security 7.x + JWT | PostgreSQL 18 | MyBatis-Plus 3.5.15 | Valkey 9.1 | MapStruct | Knife4j
+Java 25 | Spring Boot 4.0.1 | Spring Security 7.x + JWT | PostgreSQL 18 | MyBatis-Plus 3.5.15 + MyBatis-Plus-Join 1.5.5 | Valkey 9.1 | SpringDoc 3.0.1 + Scalar
 
 ## Java 现代特性 (25)
 
 项目使用 Java 25，应优先使用以下现代特性：
 
 ### Record（数据载体）
-替代传统 POJO，用于不可变数据传输对象：
+不可变数据载体，自动生成构造器、getter、equals、hashCode、toString：
 ```java
-// 替代 @Data 类，自动生成构造器、getter、equals、hashCode、toString
-public record UserVO(Long id, String username, String nickname) {}
-
 // 紧凑构造器用于校验
 public record PageQuery(int page, int size) {
     public PageQuery {
@@ -24,7 +21,18 @@ public record PageQuery(int page, int size) {
     }
 }
 ```
-**适用场景**: VO、DTO、API 响应、配置参数
+
+**优先使用 Record 的场景**（项目现有代码均按此约定）：
+- **API 入参 Request**：如 `LoginRequest`、`ParamCreateRequest`，字段不可变，紧凑构造器可集中校验
+- **API 返回 VO / DTO**：如 `UserInfoVO`、`FileUploadVO`，只读输出，天然不可变
+- **领域事件**：如 `LoginLogEvent`、`ParamChangedEvent`，事件发布后不应被修改
+- **配置属性类**：标注 `@ConfigurationProperties` 的配置载体，如 `StorageProperties`、`ScheduleProperties`
+- **内部/模块间传递的多字段只读值**：如 `SessionPage`、`TranslateKey`、`FileBatchResult`
+
+**不使用 Record 的场景**：
+- **数据库 Entity**：需要无参构造、完整 getter/setter 与链式可变更新，用 Lombok 类
+- **需要可变状态或部分字段更新的对象**：如表单实体、需要逐字段 set 的业务对象
+- **需要继承的类型**：record 隐式 final，不能被继承，也不能继承其他类（可实现接口）
 
 ### Sealed Class（密封类）
 限制类的继承，配合模式匹配使用：
@@ -240,34 +248,40 @@ ProblemDetail handleNotFound(EntityNotFoundException ex) {
 # Maven Wrapper（无需本地安装 Maven）
 ./mvnw clean compile                # 编译 (Unix/macOS)
 ./mvnw clean package -DskipTests    # 打包 (Unix/macOS)
-./mvnw checkstyle:check             # 代码检查 (Unix/macOS)
+./mvnw clean install                # 完整构建 (Unix/macOS)
 
 # Windows 使用 mvnw.cmd
 mvnw.cmd clean compile              # 编译 (Windows)
 mvnw.cmd clean package -DskipTests  # 打包 (Windows)
 
-# Docker
-docker compose up -d             # 启动容器
-docker compose down              # 停止容器
+# Docker（需在 docker/ 目录执行，首次启动前先 cp .env.production .env）
+cd docker
+docker compose up -d postgres valkey   # 仅启动数据库与缓存
+docker compose up -d                   # 启动全部中间件（含 RustFS）
+docker compose down                    # 停止容器
 ```
 
 ## 项目结构
 
 ```
-docs/sql/                    # 数据库表定义文件
-ray-common/                # 公共模块
-  ├── ray-common-core          # 核心工具、通用响应、异常定义
-  ├── ray-common-valkey        # Valkey 缓存封装
-  ├── ray-common-mybatis       # MyBatis-Plus 配置
-  └── ray-common-security      # 安全认证、JWT
-ray-framework/             # 框架模块
-  ├── ray-framework-web        # Web 配置、全局异常处理
-  └── ray-framework-log        # 操作日志
-ray-system/                # 系统模块
-  ├── ray-system-api           # 系统接口定义、Entity、VO
-  └── ray-system-biz           # 系统业务实现（用户、角色、菜单、部门、字典）
-ray-business/              # 业务模块（空占位，按需扩展）
-ray-boot-app/              # 启动模块
+docker/                      # 中间件部署（PostgreSQL、Valkey、RustFS）
+docs/sql/                    # 数据库表定义与初始化脚本
+ray-common/                  # 公共模块
+  ├── ray-common-core        # 核心工具、通用响应、异常定义、字段翻译注解
+  ├── ray-common-valkey      # Valkey 缓存封装
+  ├── ray-common-mybatis     # MyBatis-Plus 配置
+  ├── ray-common-security    # 安全认证、JWT、字段级权限
+  ├── ray-common-storage     # 文件存储（RustFS/S3、本地磁盘）
+  └── ray-common-notify      # 通知渠道（Notifier SPI）
+ray-framework/               # 框架模块
+  ├── ray-framework-web      # Web 配置、全局异常处理、限流
+  └── ray-framework-log      # 操作日志
+ray-system/                  # 系统模块
+  ├── ray-system-api         # 系统接口定义、Entity、VO
+  └── ray-system-biz         # 系统业务实现（用户、角色、菜单、部门、字典、文件）
+ray-schedule/                # 自研轻量任务调度（基于 Spring 原生调度）
+ray-business/                # 业务扩展模块（空占位，按需添加子模块）
+ray-boot-app/                # 启动入口与应用配置
 ```
 
 ## 模块依赖
@@ -281,10 +295,31 @@ ray-boot-app → ray-system-biz, ray-schedule
 ```
 
 - **ray-common**: 基础层，无依赖，被所有模块引用
-- **ray-framework**: 依赖 common，提供 Web、日志等框架能力
+- **ray-framework**: 依赖 common，提供 Web、限流、日志等框架能力
 - **ray-system**: 依赖 framework，系统管理功能
+- **ray-schedule**: 自研任务调度，依赖 ray-framework-web
 - **ray-business**: 业务模块（空占位，按需添加子模块）
 - **ray-boot-app**: 依赖 system + schedule，启动入口
+
+## 通用注解与扩展点
+
+业务代码可直接使用以下注解与扩展接口：
+
+### 通用注解
+- `@OperateLog`：方法级操作日志记录
+- `@RateLimit`：按 IP 限流
+- `@StorageFile`：将文件 ID 字段输出为结构化文件信息
+- `@ScheduleTask`：标记定时任务，由 ray-schedule 统一管理（Cron、任务持久化、动态启停、手动执行、执行日志）
+- `@EnableTranslate` / `@Translate`、`@FieldPermission`：见下方"响应字段翻译"与"字段级权限"
+
+### 扩展点（实现后注册为 Spring Bean 即可生效）
+- `StorageService`：接入新的存储后端；内置 RUST_FS / LOCAL，由 `ray.storage.storage-type` 配置选择，切换存储类型需扩展 `StorageType` 与 `StorageAutoConfiguration`
+- `Notifier`：新增通知渠道
+- `Translator`：新增字段翻译逻辑
+- `UserReferenceChecker` / `DeptReferenceChecker` / `RoleReferenceChecker` / `DictTypeReferenceChecker` / `FileReferenceChecker`：跨模块引用检查，见下方"跨模块反向依赖"
+
+### API 文档
+SpringDoc OpenAPI + Scalar，默认关闭；启动前设置 `RAY_API_DOCS_ENABLED=true` 后访问 `http://localhost:9527/scalar`。
 
 ## 核心规范
 
@@ -401,7 +436,8 @@ public IPage<User> page(PageQuery query) {
 - 简单 CRUD 直接用 Entity，避免过度封装
 - 需要隐藏敏感字段时用 VO
 - 仅复杂业务场景使用 DTO
-- 简单赋值直接用 getter/setter，复杂对象转换用 MapStruct
+- 简单赋值直接用 getter/setter，复杂对象转换手写映射方法
+- API Request / VO / DTO、领域事件、配置属性优先使用 record（详见上文 Record 规范），数据库 Entity 不使用 record
 - 对象赋值推荐使用链式 set 或 Builder 模式，避免多行独立 set
 - **数据库有 DEFAULT 的字段，Java 不设默认值**，避免冗余
 

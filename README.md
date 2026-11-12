@@ -82,6 +82,7 @@ cd ..
 | `RAY_STORAGE_PUBLIC_BASE_URL` | 必填，文件访问基址；LOCAL 时填应用地址，如 `http://localhost:9527` |
 | `RAY_STORAGE_SIGN_SECRET` | 必填，文件签名密钥，多实例需共用同一稳定值 |
 | `RUSTFS_*` | RUST_FS 后端的地址、凭据与桶名，需与实际创建的桶一致 |
+| `RAY_SNOWFLAKE_MACHINE_ID` | 雪花 ID 机器号（0~7），多实例部署时各实例必须不同，默认 0 |
 
 **Compose 的 `.env` 不会自动传入本地 Java 进程**。应用的连接信息需与中间件配置一致，其中 Valkey 使用 `REDIS_*` 变量。
 

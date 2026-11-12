@@ -65,7 +65,7 @@ cd ..
 
 首次启动 PostgreSQL 会自动执行 [docs/sql/](docs/sql/) 中的初始化脚本。端口与数据持久化配置见 [中间件部署](docker/README.md)。
 
-默认使用 `RUST_FS` 后端，启动应用前需按 [文件存储部署](docs/deployment/file-storage.md) 预建私有桶。
+默认使用 `RUST_FS` 后端，启动应用前需按 [文件存储部署](docs/operations/file-storage.md) 预建私有桶。
 
 如需使用本地磁盘，将 `application.yml` 中的 `ray.storage.storage-type` 改为 `LOCAL`，中间件只需启动 `docker compose up -d postgres valkey`（在 `docker/` 下执行）。切换已有存储后端前需先迁移文件数据。
 
@@ -134,15 +134,17 @@ ray-boot/
 ### 常用扩展入口
 
 - **通知与翻译**：实现 `Notifier` 或 `Translator` 并注册为 Spring Bean。
-- **文件引用检查**：实现 `FileReferenceChecker`，参与删除前的业务引用校验。
+- **业务引用检查**：业务表保存用户、部门、角色、字典类型或文件 id 时，实现对应的 `UserReferenceChecker` / `DeptReferenceChecker` / `RoleReferenceChecker` / `DictTypeReferenceChecker` / `FileReferenceChecker`；系统删除前聚合全部实现，仍被有效业务数据引用时整批拒绝。详见[业务模块接入](docs/guides/business-module-integration.md)。
 - **存储后端**：实现 `StorageService`；内置后端可由自定义 Bean 替换，按配置选择新类型时需扩展 `StorageType` 与 `StorageAutoConfiguration`。
 - **定时任务**：编写带 `@ScheduleTask` 的任务 Bean，并在任务管理中登记。
 
 ## 相关文档
 
+- [文档导航](docs/README.md)：设计、指南、运维与资产目录的分类约定。
+- [业务模块接入](docs/guides/business-module-integration.md)：新建模块、扩展契约与跨模块引用检查。
 - [中间件部署](docker/README.md)：Compose 配置、连接信息与数据库初始化。
-- [文件存储部署](docs/deployment/file-storage.md)：桶权限、本地目录、签名访问与存储迁移约束。
-- [会话管理设计](docs/session-management.md)：RefreshToken 轮换、在线会话分页与升级说明。
+- [文件存储部署](docs/operations/file-storage.md)：桶权限、本地目录、签名访问与存储迁移约束。
+- [会话管理设计](docs/design/session-management.md)：RefreshToken 轮换、在线会话分页与升级说明。
 - [开发约定](AGENTS.md)：分层职责、权限控制、字段翻译与代码风格。
 
 ## 项目截图

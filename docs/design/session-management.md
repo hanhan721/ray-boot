@@ -1,6 +1,6 @@
 # 会话管理与在线分页
 
-部署前执行 `docs/sql/migrations/20261103_login_session.sql`。原有 Refresh Token 的稳定登录标识初始化为原会话摘要，既有凭据仍可续期。升级期间应暂停认证写入，避免旧实例继续按旧表结构签发凭据。
+项目没有迁移机制，`docs/sql/` 是全量初始化脚本：新环境直接执行即可获得完整表结构（含 Refresh Token 的稳定登录标识 `login_session_id`）；已有开发库须显式重建，重建会清空既有凭据与在线会话数据。
 
 Access Token 每次刷新继续轮换，`loginSessionId` 在一次登录期间保持不变。旧 Refresh Token 标记为已轮换，不能用于续期；在它原本的有效期内，仍可用于登出定位。登出在用户行锁内撤销该次登录的当前凭据及轮换历史，不影响其他设备。沿用现有 Refresh Token 过期清理任务清理历史记录。
 

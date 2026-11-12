@@ -51,23 +51,23 @@ VALUES (102, 100, '角色管理', 'MENU', 'role', 'system/role/index', 'RolePage
 
 -- 部门管理（菜单）
 INSERT INTO sys_permission (id, parent_id, name, type, url, component, route_name, icon, sort, keep_alive, description)
-VALUES (103, 100, '部门管理', 'MENU', 'dept', 'system/dept/index', 'DeptPage', 'AppsOutline', 3, TRUE, '部门管理页面');
+VALUES (103, 100, '部门管理', 'MENU', 'dept', 'system/dept/index', 'DeptPage', 'DeptOutline', 3, TRUE, '部门管理页面');
 
 -- 菜单管理（菜单）
 INSERT INTO sys_permission (id, parent_id, name, type, url, component, route_name, icon, sort, keep_alive, description)
-VALUES (104, 100, '菜单管理', 'MENU', 'menu', 'system/menu/index', 'MenuPage', 'ListOutline', 4, TRUE, '菜单/权限管理页面');
+VALUES (104, 100, '菜单管理', 'MENU', 'menu', 'system/menu/index', 'MenuPage', 'MenuOutline', 4, TRUE, '菜单/权限管理页面');
 
 -- 字典管理（菜单）
 INSERT INTO sys_permission (id, parent_id, name, type, url, component, route_name, icon, sort, keep_alive, description)
-VALUES (105, 100, '字典管理', 'MENU', 'dict', 'system/dict/index', 'DictPage', 'DocumentOutline', 5, TRUE, '字典管理页面');
+VALUES (105, 100, '字典管理', 'MENU', 'dict', 'system/dict/index', 'DictPage', 'DictOutline', 5, TRUE, '字典管理页面');
 
 -- 系统参数（菜单）
 INSERT INTO sys_permission (id, parent_id, name, type, url, component, route_name, icon, sort, keep_alive, description)
-VALUES (106, 100, '系统参数', 'MENU', 'param', 'system/param/index', 'ParamPage', 'SettingsOutline', 6, TRUE, '系统参数管理页面');
+VALUES (106, 100, '系统参数', 'MENU', 'param', 'system/param/index', 'ParamPage', 'ParamOutline', 6, TRUE, '系统参数管理页面');
 
 -- 在线用户（菜单）
 INSERT INTO sys_permission (id, parent_id, name, type, url, component, route_name, icon, sort, description)
-VALUES (107, 100, '在线用户', 'MENU', 'online', 'system/online/index', 'OnlinePage', 'PeopleOutline', 7, '在线用户管理页面');
+VALUES (107, 100, '在线用户', 'MENU', 'online', 'system/online/index', 'OnlinePage', 'OnlineOutline', 7, '在线用户管理页面');
 
 -- 在线用户按钮权限
 INSERT INTO sys_permission (id, parent_id, name, type, code, sort, hidden, description)

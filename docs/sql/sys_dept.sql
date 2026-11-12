@@ -19,3 +19,10 @@ CREATE TABLE sys_dept (
 );
 
 CREATE INDEX idx_sys_dept_parent_id ON sys_dept (parent_id);
+
+-- 同级部门名称唯一；应用层先查后写在并发下由本索引兜底。
+-- parent_id 允许 NULL（应用会归一化为 0），用 COALESCE 保证 NULL 父级与 0 父级同样参与唯一性；
+-- 已逻辑删除的部门不参与唯一性，删除后可重建同名部门。
+CREATE UNIQUE INDEX uk_sys_dept_parent_name
+    ON sys_dept (COALESCE(parent_id, 0), dept_name)
+    WHERE NOT deleted;

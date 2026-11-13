@@ -59,7 +59,7 @@ public class SysPermission extends BaseEntity<SysPermission> implements TreeNode
     private String redirect;
 
     /**
-     * 权限标识，如 user:add，按钮必填
+     * 权限标识，如 system:user:add，按钮必填
      */
     private String code;
 

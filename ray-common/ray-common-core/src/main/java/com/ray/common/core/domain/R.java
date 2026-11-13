@@ -68,8 +68,4 @@ public class R<T> implements Serializable {
                 .setCode(code)
                 .setMsg(msg);
     }
-
-    public boolean isSuccess() {
-        return this.code == ResultCode.SUCCESS.getCode();
-    }
 }

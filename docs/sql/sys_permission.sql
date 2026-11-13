@@ -10,7 +10,7 @@ CREATE TABLE sys_permission (
     url             VARCHAR(255),                                               -- 路由路径
     component       VARCHAR(255),                                               -- 组件路径，目录可为空或Layout
     redirect        VARCHAR(255),                                               -- 重定向地址，目录使用
-    code            VARCHAR(100),                                               -- 权限标识，如 user:add，按钮必填
+    code            VARCHAR(100),                                               -- 权限标识，如 system:user:add，按钮必填
     icon            VARCHAR(100),                                               -- 菜单图标
     sort            INT                 DEFAULT 0,                              -- 排序
     hidden          BOOLEAN             DEFAULT FALSE,                          -- 是否隐藏路由

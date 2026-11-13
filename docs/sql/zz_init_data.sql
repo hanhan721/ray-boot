@@ -85,7 +85,7 @@ SELECT id, parent_id, name, 'BUTTON'::permission_type, code, sort, TRUE
 FROM (VALUES
     (10101, 101, '用户查询列表', 'system:user:list', 1),
     (10102, 101, '用户查询详情', 'system:user:query', 2),
-    (10103, 101, '用户新增', 'user:add', 3),
+    (10103, 101, '用户新增', 'system:user:add', 3),
     (10104, 101, '用户修改', 'system:user:edit', 4),
     (10105, 101, '用户删除', 'system:user:remove', 5),
     (10106, 101, '用户重置密码', 'system:user:password', 6),

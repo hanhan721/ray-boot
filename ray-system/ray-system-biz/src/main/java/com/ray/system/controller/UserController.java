@@ -52,7 +52,7 @@ public class UserController {
 
     @Operation(summary = "新增用户")
     @PostMapping
-    @PreAuthorize("@perm.has('user:add')")
+    @PreAuthorize("@perm.has('system:user:add')")
     public R<Void> add(@Valid @RequestBody SysUser user) {
         userService.add(user);
         return R.ok();

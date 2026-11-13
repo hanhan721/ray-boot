@@ -12,9 +12,9 @@ import java.util.Set;
 /**
  * 自定义权限校验器
  * <p>
- * 使用方式: {@code @PreAuthorize("@perm.has('user:add')")}
+ * 使用方式: {@code @PreAuthorize("@perm.has('system:user:add')")}
  * <p>
- * 支持多权限校验: {@code @PreAuthorize("@perm.hasAny('user:add', 'user:edit')")}
+ * 支持多权限校验: {@code @PreAuthorize("@perm.hasAny('system:user:add', 'system:user:edit')")}
  * <p>
  * 超管自动拥有所有权限
  */

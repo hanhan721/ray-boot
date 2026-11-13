@@ -4,8 +4,6 @@ server:
 spring:
   application:
     name: ray-boot
-  profiles:
-    active: dev
   threads:
     virtual:
       enabled: true

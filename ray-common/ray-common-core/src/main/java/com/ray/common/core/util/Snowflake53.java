@@ -79,7 +79,7 @@ public final class Snowflake53 {
             // 时钟回拨：若 delta < prevDelta，则等待到 prevDelta+1 对应的真实时间
             if (prev >= 0 && delta < prevDelta) {
                 long targetMs = (prevDelta + 1) + EPOCH_MS;
-                busyWaitUntil(targetMs);
+                waitUntil(targetMs);
                 continue; // 重新读取 state 与时间
             }
 
@@ -87,7 +87,7 @@ public final class Snowflake53 {
                 // 同一毫秒：尝试递增序列
                 if (prevSeq == SEQ_MASK) {
                     // 序列用尽 -> 等下一毫秒
-                    busyWaitUntil(nowMs + 1);
+                    waitUntil(nowMs + 1);
                     continue;
                 }
                 long newSeq = prevSeq + 1;
@@ -134,11 +134,16 @@ public final class Snowflake53 {
 
     // ===== 内部工具 =====
 
-    private static void busyWaitUntil(long targetMs) {
-        long cur;
-        do {
-            cur = System.currentTimeMillis();
-        } while (cur < targetMs);
+    private static void waitUntil(long targetMs) {
+        long remainingMs;
+        while ((remainingMs = targetMs - System.currentTimeMillis()) > 0) {
+            try {
+                Thread.sleep(Math.min(remainingMs, 10L));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("等待生成雪花ID时线程被中断", e);
+            }
+        }
     }
 
     /**

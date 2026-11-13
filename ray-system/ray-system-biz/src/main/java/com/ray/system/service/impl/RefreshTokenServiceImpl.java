@@ -10,12 +10,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -95,6 +98,19 @@ public class RefreshTokenServiceImpl extends ServiceImpl<RefreshTokenMapper, Ref
         super.remove(Wrappers.<RefreshToken>lambdaQuery()
                 .eq(RefreshToken::getUserId, userId).eq(RefreshToken::getLoginSessionId, loginSessionId));
         return sessions;
+    }
+
+    @Override
+    public Map<Long, Set<String>> findSessionIdsByUserIds(Collection<Long> userIds) {
+        if (CollectionUtils.isEmpty(userIds)) {
+            return Map.of();
+        }
+        return super.list(Wrappers.<RefreshToken>lambdaQuery()
+                        .select(RefreshToken::getUserId, RefreshToken::getSessionId)
+                        .in(RefreshToken::getUserId, userIds))
+                .stream()
+                .collect(Collectors.groupingBy(RefreshToken::getUserId,
+                        Collectors.mapping(RefreshToken::getSessionId, Collectors.toSet())));
     }
 
     @Override

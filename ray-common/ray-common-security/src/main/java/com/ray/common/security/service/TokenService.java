@@ -154,7 +154,11 @@ public class TokenService {
         return new TokenAuthentication(sessionId, stableId, loginUser, authorities, authorization);
     }
 
-    /** 捕获用户现有会话标识；此处不读取或加载授权。 */
+    /**
+     * 捕获 Valkey 中的用户会话索引；此处不读取或加载授权。
+     * <p>
+     * 批量撤销须与持久化凭据合并，避免缓存淘汰导致索引不完整时漏撤销。
+     */
     public Map<Long, Set<String>> captureUserSessions(Collection<Long> userIds) {
         Map<Long, Set<String>> captured = new TreeMap<>();
         for (var userId : userIds) {

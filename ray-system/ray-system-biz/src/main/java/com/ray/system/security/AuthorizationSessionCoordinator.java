@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 
@@ -86,7 +87,13 @@ public class AuthorizationSessionCoordinator {
         var sortedIds = new TreeSet<>(userIds);
         sortedIds.forEach(userMapper::selectByIdForUpdate);
         var tokens = tokenServices.getObject();
-        var captured = tokens.captureUserSessions(sortedIds);
+        var captured = new TreeMap<>(tokens.captureUserSessions(sortedIds));
+        // 数据库凭据是持久化来源；Valkey 索引只作为快速路径，缓存淘汰时仍须能枚举全部会话。
+        refreshTokenService.findSessionIdsByUserIds(sortedIds).forEach((userId, sessionIds) -> {
+            var sessions = new TreeSet<>(captured.getOrDefault(userId, Set.of()));
+            sessions.addAll(sessionIds);
+            captured.put(userId, sessions);
+        });
         refreshTokenService.remove(Wrappers.<RefreshToken>lambdaQuery().in(RefreshToken::getUserId, sortedIds));
         tokens.revokeAfterCommit(captured);
     }

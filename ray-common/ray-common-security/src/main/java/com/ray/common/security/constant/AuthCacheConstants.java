@@ -14,7 +14,11 @@ public final class AuthCacheConstants {
      */
     public static final String SESSION_KEY_PREFIX = "session:";
 
-    /** 用户会话索引 (Set)：user_sessions:{userId} -> sessionId 集合。 */
+    /**
+     * 用户会话索引 (Set)：user_sessions:{userId} -> sessionId 集合。
+     * <p>
+     * 仅作批量撤销的快速路径；持久化来源为 sys_refresh_token，索引被缓存淘汰时不得漏撤销。
+     */
     public static final String USER_SESSIONS_KEY_PREFIX = "user_sessions:";
 
     /**

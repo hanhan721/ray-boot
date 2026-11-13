@@ -3,6 +3,8 @@ package com.ray.system.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.ray.system.api.entity.RefreshToken;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -32,6 +34,16 @@ public interface RefreshTokenService extends IService<RefreshToken> {
 
     /** 撤销指定登录及其轮换历史，返回需要撤销的当前 Access Token 摘要。 */
     Set<String> revokeLoginSession(Long userId, String loginSessionId);
+
+    /**
+     * 查询用户所有凭据关联的 Access Token 摘要。
+     * <p>
+     * 作为 Valkey 会话索引的持久化兜底，避免缓存淘汰导致批量撤销遗漏会话。
+     *
+     * @param userIds 用户 ID 集合
+     * @return userId -> sessionId 集合
+     */
+    Map<Long, Set<String>> findSessionIdsByUserIds(Collection<Long> userIds);
 
     /**
      * 验证 Refresh Token
